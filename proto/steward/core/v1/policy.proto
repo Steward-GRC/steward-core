@@ -1,0 +1,453 @@
+// Copyright 2026 The Steward Authors
+// SPDX-License-Identifier: Apache-2.0
+
+syntax = "proto3";
+
+package steward.core.v1;
+
+import "google/protobuf/timestamp.proto";
+import "steward/core/v1/category.proto";
+
+option go_package = "github.com/Steward-GRC/steward-core/gen/go/steward/core/v1;corev1";
+
+enum PolicyVersionStatus {
+  POLICY_VERSION_STATUS_UNSPECIFIED = 0;
+  POLICY_VERSION_STATUS_DRAFT = 1;
+  POLICY_VERSION_STATUS_PUBLISHED = 2;
+  POLICY_VERSION_STATUS_SUPERSEDED = 3;
+  POLICY_VERSION_STATUS_ARCHIVED = 4;
+}
+
+enum Sensitivity {
+  SENSITIVITY_UNSPECIFIED = 0;
+  SENSITIVITY_STANDARD = 1;
+  SENSITIVITY_SENSITIVE = 2;
+}
+
+// DocumentType tells the two document kinds apart. Procedures share every
+// part of policies except acknowledgements: they never obligate anyone.
+enum DocumentType {
+  // Read as DOCUMENT_TYPE_POLICY.
+  DOCUMENT_TYPE_UNSPECIFIED = 0;
+  DOCUMENT_TYPE_POLICY = 1;
+  DOCUMENT_TYPE_PROCEDURE = 2;
+}
+
+message Policy {
+  string id = 1;
+  string home_category_id = 2;
+  string number = 3;
+  string title = 4;
+  Sensitivity sensitivity = 5;
+  // ISO-8601 date, or empty.
+  string effective_date = 6;
+  string review_date = 7;
+  string owner_user_id = 8;
+  string current_published_version_id = 9;
+  // The current working draft, if any.
+  string current_draft_version_id = 10;
+  // The policy's own template; empty uses the category default.
+  string template_id = 11;
+  // Computed on read.
+  bool template_update_available = 12;
+  // With template_id, a three-state template: both unset inherits from the
+  // category chain, template_none means freeform, and a set template_id names
+  // the template.
+  bool template_none = 13;
+  AckTrigger ack_triggers = 14;
+  // False inherits ack_triggers from the home category.
+  bool ack_triggers_set = 15;
+  // Directory group names; empty means the home category's audience.
+  repeated string ack_audience_override = 16;
+  // RFC 3339; empty while active. A retired policy is hidden and obligates no
+  // one, but keeps its version history and past acknowledgements.
+  string retired_at = 17;
+  // Set at creation and read-only after it.
+  DocumentType document_type = 18;
+}
+
+message PolicyVersion {
+  string id = 1;
+  string policy_id = 2;
+  int32 version_no = 3;
+  PolicyVersionStatus status = 4;
+  // The template version this version is pinned to.
+  string template_version_id = 5;
+  // Serialized Lexical editor state.
+  string content_json = 6;
+  google.protobuf.Timestamp created_at = 7;
+  google.protobuf.Timestamp published_at = 8;
+  string created_by = 9;
+  string supersedes_version_id = 10;
+}
+
+message SectionDiff {
+  string section_key = 1;
+  string section_title = 2;
+  // "added", "removed", "changed" or "unchanged".
+  string change_type = 3;
+  // Inline word diff; empty when unchanged.
+  string word_diff_html = 4;
+  // True when a template migration made the change.
+  bool is_boilerplate = 5;
+}
+
+message CreatePolicyRequest {
+  string home_category_id = 1;
+  string title = 2;
+  Sensitivity sensitivity = 3;
+  string owner_user_id = 4;
+  string template_id = 5;
+  // Unset creates a policy.
+  DocumentType document_type = 6;
+}
+
+message CreatePolicyResponse {
+  Policy policy = 1;
+}
+
+message GetPolicyRequest {
+  string id = 1;
+}
+
+message GetPolicyResponse {
+  Policy policy = 1;
+}
+
+message ListPoliciesRequest {
+  string category_id = 1;
+  bool include_descendants = 2;
+  // Unset lists policies only; there is no "both".
+  DocumentType document_type = 3;
+}
+
+message ListPoliciesResponse {
+  repeated Policy policies = 1;
+}
+
+message GetPolicyVersionRequest {
+  string id = 1;
+}
+
+message GetPolicyVersionResponse {
+  PolicyVersion version = 1;
+}
+
+message ListPolicyVersionsRequest {
+  string policy_id = 1;
+}
+
+message ListPolicyVersionsResponse {
+  // Published versions, oldest first.
+  repeated PolicyVersion versions = 1;
+}
+
+message SaveDraftRequest {
+  string policy_id = 1;
+  string content_json = 2;
+  string template_version_id = 3;
+  string actor_user_id = 4;
+}
+
+message SaveDraftResponse {
+  PolicyVersion version = 1;
+}
+
+message PublishDraftRequest {
+  string policy_id = 1;
+  string actor_user_id = 2;
+}
+
+message PublishDraftResponse {
+  PolicyVersion version = 1;
+}
+
+// DiscardDraftRequest deletes the current draft only, never the policy or a
+// published version.
+message DiscardDraftRequest {
+  string policy_id = 1;
+  string actor_user_id = 2;
+}
+
+message DiscardDraftResponse {}
+
+// DeletePolicyRequest hard-deletes a policy that was never published, with
+// its drafts and appendices. It is refused once any version was published.
+message DeletePolicyRequest {
+  string policy_id = 1;
+  string actor_user_id = 2;
+}
+
+message DeletePolicyResponse {
+  bool deleted = 1;
+}
+
+// RetirePolicyRequest retires a policy: hidden from listings, and every
+// outstanding acknowledgement is cancelled. History and completed
+// acknowledgements stay.
+message RetirePolicyRequest {
+  string policy_id = 1;
+  string actor_user_id = 2;
+}
+
+message RetirePolicyResponse {
+  Policy policy = 1;
+}
+
+// SetVersionStatusRequest writes a version's stored status: draft,
+// published, superseded or archived. The approval states live in workflow.
+message SetVersionStatusRequest {
+  string policy_version_id = 1;
+  string status = 2;
+  string actor_user_id = 3;
+}
+
+message SetVersionStatusResponse {
+  PolicyVersion version = 1;
+}
+
+message SetPolicyOwnerRequest {
+  string policy_id = 1;
+  string owner_user_id = 2;
+  string actor_user_id = 3;
+}
+
+message SetPolicyOwnerResponse {
+  Policy policy = 1;
+}
+
+// ListPoliciesByOwnerRequest lists the policies a user owns, so an admin can
+// hand them over before the account is deleted. Retired policies are left
+// out unless include_retired is set.
+message ListPoliciesByOwnerRequest {
+  string owner_user_id = 1;
+  bool include_retired = 2;
+}
+
+message ListPoliciesByOwnerResponse {
+  repeated Policy policies = 1;
+}
+
+// ReassignUserPoliciesRequest moves a user's whole ownership footprint to
+// another user: every policy they own, and every user-subject category rule
+// naming them.
+message ReassignUserPoliciesRequest {
+  string from_user_id = 1;
+  string to_user_id = 2;
+  string actor_user_id = 3;
+}
+
+message ReassignUserPoliciesResponse {
+  repeated string reassigned_policy_ids = 1;
+  int32 reassigned_owner_count = 2;
+  int32 reassigned_author_grants = 3;
+}
+
+// MovePolicyRequest moves a policy to another category and renumbers it from
+// that category's sequence.
+message MovePolicyRequest {
+  string policy_id = 1;
+  string home_category_id = 2;
+  string actor_user_id = 3;
+}
+
+message MovePolicyResponse {
+  Policy policy = 1;
+}
+
+message DiffVersionsRequest {
+  string from_version_id = 1;
+  string to_version_id = 2;
+}
+
+message DiffVersionsResponse {
+  repeated SectionDiff diffs = 1;
+}
+
+message GetEffectiveTemplateRequest {
+  string policy_id = 1;
+}
+
+message GetEffectiveTemplateResponse {
+  string template_id = 1;
+  string template_version_id = 2;
+  // True when the policy resolves to freeform: both ids are empty.
+  bool none = 3;
+}
+
+// SetPolicyTemplateRequest sets the policy's own template: none means
+// freeform, a template_id names one, and neither inherits.
+message SetPolicyTemplateRequest {
+  string policy_id = 1;
+  string template_id = 2;
+  bool none = 3;
+  string actor_user_id = 4;
+}
+
+message SetPolicyTemplateResponse {
+  Policy policy = 1;
+}
+
+// SetPolicySensitivityRequest changes the classification in place, with no
+// new version and no approval.
+message SetPolicySensitivityRequest {
+  string policy_id = 1;
+  Sensitivity sensitivity = 2;
+  string actor_user_id = 3;
+}
+
+message SetPolicySensitivityResponse {
+  Policy policy = 1;
+}
+
+// RenamePolicyRequest renames a never-published policy in place. For a
+// published policy the new title is staged on a draft and takes effect when
+// that draft is published.
+message RenamePolicyRequest {
+  string policy_id = 1;
+  string new_title = 2;
+  string actor_user_id = 3;
+}
+
+message RenamePolicyResponse {
+  Policy policy = 1;
+  bool staged = 2;
+  string draft_version_id = 3;
+}
+
+message UpdateDraftContentRequest {
+  string policy_id = 1;
+  // The draft version.
+  string draft_id = 2;
+  // Serialized Lexical editor state.
+  string content_json = 3;
+  // The template version the content is validated against.
+  string template_version_id = 4;
+  string actor_user_id = 5;
+}
+
+message UpdateDraftContentResponse {
+  string draft_id = 1;
+  bool accepted = 2;
+  // Set when accepted is false.
+  string reject_reason = 3;
+}
+
+message SetAckRequest {
+  string policy_id = 1;
+  AckTrigger ack_triggers = 2;
+  bool ack_triggers_set = 3;
+  repeated string ack_audience_override = 4;
+}
+
+message SetAckResponse {
+  Policy policy = 1;
+}
+
+message ResolvePolicyObligationRequest {
+  string policy_id = 1;
+}
+
+message ResolvePolicyObligationResponse {
+  bool requires_ack = 1;
+  bool on_change = 2;
+  repeated string audience_groups = 3;
+  string published_version_id = 4;
+  // True when every user must acknowledge; audience_groups is then ignored.
+  bool everyone = 5;
+}
+
+message ObligatingPolicy {
+  string policy_id = 1;
+  string number = 2;
+  string title = 3;
+  string published_version_id = 4;
+  int32 version_no = 5;
+  repeated string audience_groups = 6;
+  bool on_change = 7;
+  // True when every user must acknowledge; audience_groups is then ignored.
+  bool everyone = 8;
+  // Always a policy: procedures never obligate. Carried so consumers can
+  // check without a second lookup.
+  DocumentType document_type = 9;
+}
+
+message ListObligatingPoliciesRequest {}
+
+message ListObligatingPoliciesResponse {
+  repeated ObligatingPolicy policies = 1;
+}
+
+// ReindexPolicyRequest re-sends a policy's current published version to the
+// AI indexer only, not to the lifecycle fan-out, and removes the chunks of
+// its other versions. Refused when nothing is published.
+message ReindexPolicyRequest {
+  string policy_id = 1;
+  string actor_user_id = 2;
+}
+
+message ReindexPolicyResponse {
+  string version_id = 1;
+  int32 sections = 2;
+  int32 removed_prior = 3;
+}
+
+// ReindexPolicyVersionRequest re-indexes one version, which must be the
+// current published one.
+message ReindexPolicyVersionRequest {
+  string policy_version_id = 1;
+  string actor_user_id = 2;
+}
+
+message ReindexPolicyVersionResponse {
+  string version_id = 1;
+  int32 sections = 2;
+  int32 removed_prior = 3;
+}
+
+// ReindexAllPublishedRequest re-indexes every policy's current published
+// version, best effort per policy.
+message ReindexAllPublishedRequest {
+  string actor_user_id = 1;
+}
+
+message ReindexAllPublishedResponse {
+  int32 policies_reindexed = 1;
+  int32 skipped = 2;
+  int32 failures = 3;
+}
+
+// PolicyService manages policies and procedures and their versions. Access to
+// each RPC is enforced at the gateway; actor_user_id is recorded in audit.
+service PolicyService {
+  rpc CreatePolicy(CreatePolicyRequest) returns (CreatePolicyResponse);
+  rpc GetPolicy(GetPolicyRequest) returns (GetPolicyResponse);
+  rpc ListPolicies(ListPoliciesRequest) returns (ListPoliciesResponse);
+  rpc GetPolicyVersion(GetPolicyVersionRequest) returns (GetPolicyVersionResponse);
+  rpc ListPolicyVersions(ListPolicyVersionsRequest) returns (ListPolicyVersionsResponse);
+  rpc SaveDraft(SaveDraftRequest) returns (SaveDraftResponse);
+  rpc PublishDraft(PublishDraftRequest) returns (PublishDraftResponse);
+  rpc DiscardDraft(DiscardDraftRequest) returns (DiscardDraftResponse);
+  rpc DeletePolicy(DeletePolicyRequest) returns (DeletePolicyResponse);
+  rpc RetirePolicy(RetirePolicyRequest) returns (RetirePolicyResponse);
+  // SetVersionStatus is how workflow writes an approval outcome back.
+  rpc SetVersionStatus(SetVersionStatusRequest) returns (SetVersionStatusResponse);
+  rpc SetPolicyOwner(SetPolicyOwnerRequest) returns (SetPolicyOwnerResponse);
+  rpc ListPoliciesByOwner(ListPoliciesByOwnerRequest) returns (ListPoliciesByOwnerResponse);
+  rpc ReassignUserPolicies(ReassignUserPoliciesRequest) returns (ReassignUserPoliciesResponse);
+  rpc MovePolicy(MovePolicyRequest) returns (MovePolicyResponse);
+  rpc DiffVersions(DiffVersionsRequest) returns (DiffVersionsResponse);
+  rpc GetEffectiveTemplate(GetEffectiveTemplateRequest) returns (GetEffectiveTemplateResponse);
+  rpc SetPolicyTemplate(SetPolicyTemplateRequest) returns (SetPolicyTemplateResponse);
+  rpc SetPolicySensitivity(SetPolicySensitivityRequest) returns (SetPolicySensitivityResponse);
+  rpc RenamePolicy(RenamePolicyRequest) returns (RenamePolicyResponse);
+  // UpdateDraftContent is how collab saves each debounced snapshot: the
+  // content is validated against the pinned template version first.
+  rpc UpdateDraftContent(UpdateDraftContentRequest) returns (UpdateDraftContentResponse);
+  rpc SetAck(SetAckRequest) returns (SetAckResponse);
+  rpc ResolvePolicyObligation(ResolvePolicyObligationRequest) returns (ResolvePolicyObligationResponse);
+  rpc ListObligatingPolicies(ListObligatingPoliciesRequest) returns (ListObligatingPoliciesResponse);
+  rpc ReindexPolicy(ReindexPolicyRequest) returns (ReindexPolicyResponse);
+  rpc ReindexPolicyVersion(ReindexPolicyVersionRequest) returns (ReindexPolicyVersionResponse);
+  rpc ReindexAllPublished(ReindexAllPublishedRequest) returns (ReindexAllPublishedResponse);
+}

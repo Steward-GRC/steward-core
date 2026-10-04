@@ -1,0 +1,131 @@
+// Copyright 2026 The Steward Authors
+// SPDX-License-Identifier: Apache-2.0
+
+syntax = "proto3";
+
+package steward.core.v1;
+
+option go_package = "github.com/Steward-GRC/steward-core/gen/go/steward/core/v1;corev1";
+
+// DefinitionEntry is a glossary entry in the shared library, scoped to a
+// category. A document can attach the entries of its home category and that
+// category's ancestors; they render live.
+message DefinitionEntry {
+  string id = 1;
+  // The owning category: the sharing scope.
+  string category_id = 2;
+  string term = 3;
+  // Plain text.
+  string definition = 4;
+  // Hidden from the library and the picker, but still shown where attached.
+  bool archived = 5;
+  string created_by_user_id = 6;
+  // RFC 3339.
+  string created_at = 7;
+  // The number of documents that attach the entry.
+  int32 used_by_count = 8;
+}
+
+// DefinitionEntryInput is the editable part of an entry. Term and definition
+// are required; category_id is required on create and fixed after it.
+message DefinitionEntryInput {
+  string category_id = 1;
+  string term = 2;
+  string definition = 3;
+}
+
+message ListDefinitionEntriesRequest {
+  // Empty lists every category.
+  string category_id = 1;
+  // False lists active entries only.
+  bool include_archived = 2;
+}
+
+message ListDefinitionEntriesResponse {
+  // Ordered by term.
+  repeated DefinitionEntry definitions = 1;
+}
+
+message ListPolicyDefinitionCandidatesRequest {
+  string policy_id = 1;
+  bool include_archived = 2;
+}
+
+message ListPolicyDefinitionCandidatesResponse {
+  // Ordered by term.
+  repeated DefinitionEntry definitions = 1;
+}
+
+message CreateDefinitionEntryRequest {
+  DefinitionEntryInput input = 1;
+  string actor_user_id = 2;
+}
+
+message CreateDefinitionEntryResponse {
+  DefinitionEntry definition = 1;
+}
+
+message UpdateDefinitionEntryRequest {
+  string id = 1;
+  DefinitionEntryInput input = 2;
+  string actor_user_id = 3;
+}
+
+message UpdateDefinitionEntryResponse {
+  DefinitionEntry definition = 1;
+}
+
+message SetDefinitionEntryArchivedRequest {
+  string id = 1;
+  bool archived = 2;
+  string actor_user_id = 3;
+}
+
+message SetDefinitionEntryArchivedResponse {
+  DefinitionEntry definition = 1;
+}
+
+// DeleteDefinitionEntryRequest removes an entry. It is refused while any
+// document attaches it; archive it instead.
+message DeleteDefinitionEntryRequest {
+  string id = 1;
+  string actor_user_id = 2;
+}
+
+message DeleteDefinitionEntryResponse {}
+
+message ListPolicyDefinitionEntriesRequest {
+  string policy_id = 1;
+}
+
+message ListPolicyDefinitionEntriesResponse {
+  // In the order they were attached.
+  repeated DefinitionEntry definitions = 1;
+}
+
+// SetPolicyDefinitionEntriesRequest replaces a document's attached entries,
+// in order. Unknown ids are refused.
+message SetPolicyDefinitionEntriesRequest {
+  string policy_id = 1;
+  repeated string definition_ids = 2;
+  string actor_user_id = 3;
+}
+
+message SetPolicyDefinitionEntriesResponse {
+  repeated DefinitionEntry definitions = 1;
+}
+
+// DefinitionLibraryService manages the definitions library and each
+// document's attachments. Attaching is not versioned.
+service DefinitionLibraryService {
+  rpc ListDefinitionEntries(ListDefinitionEntriesRequest) returns (ListDefinitionEntriesResponse);
+  // ListPolicyDefinitionCandidates lists the entries a document may attach:
+  // those of its home category and its ancestors.
+  rpc ListPolicyDefinitionCandidates(ListPolicyDefinitionCandidatesRequest) returns (ListPolicyDefinitionCandidatesResponse);
+  rpc CreateDefinitionEntry(CreateDefinitionEntryRequest) returns (CreateDefinitionEntryResponse);
+  rpc UpdateDefinitionEntry(UpdateDefinitionEntryRequest) returns (UpdateDefinitionEntryResponse);
+  rpc DeleteDefinitionEntry(DeleteDefinitionEntryRequest) returns (DeleteDefinitionEntryResponse);
+  rpc SetDefinitionEntryArchived(SetDefinitionEntryArchivedRequest) returns (SetDefinitionEntryArchivedResponse);
+  rpc ListPolicyDefinitionEntries(ListPolicyDefinitionEntriesRequest) returns (ListPolicyDefinitionEntriesResponse);
+  rpc SetPolicyDefinitionEntries(SetPolicyDefinitionEntriesRequest) returns (SetPolicyDefinitionEntriesResponse);
+}

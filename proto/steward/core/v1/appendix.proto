@@ -1,0 +1,75 @@
+// Copyright 2026 The Steward Authors
+// SPDX-License-Identifier: Apache-2.0
+
+syntax = "proto3";
+
+package steward.core.v1;
+
+option go_package = "github.com/Steward-GRC/steward-core/gen/go/steward/core/v1;corev1";
+
+// Appendix is supporting material attached to a policy version. Its letter
+// comes from order_index when read.
+message Appendix {
+  string id = 1;
+  string policy_version_id = 2;
+  string title = 3;
+  // Serialized Lexical editor state.
+  string content_json = 4;
+  // Zero-based.
+  int32 order_index = 5;
+}
+
+message ListAppendicesRequest {
+  string policy_version_id = 1;
+}
+
+message ListAppendicesResponse {
+  // Ordered by order_index.
+  repeated Appendix appendices = 1;
+}
+
+// AddAppendixRequest appends an appendix to a draft version.
+message AddAppendixRequest {
+  string policy_version_id = 1;
+  string title = 2;
+  string content_json = 3;
+}
+
+message AddAppendixResponse {
+  Appendix appendix = 1;
+}
+
+message UpdateAppendixRequest {
+  string id = 1;
+  string title = 2;
+  string content_json = 3;
+}
+
+message UpdateAppendixResponse {
+  Appendix appendix = 1;
+}
+
+// ReorderAppendicesRequest sets each appendix's order from its position in
+// ordered_ids, which must list every appendix of the version.
+message ReorderAppendicesRequest {
+  string policy_version_id = 1;
+  repeated string ordered_ids = 2;
+}
+
+message ReorderAppendicesResponse {
+  repeated Appendix appendices = 1;
+}
+
+message DeleteAppendixRequest {
+  string id = 1;
+}
+
+message DeleteAppendixResponse {}
+
+service AppendixService {
+  rpc ListAppendices(ListAppendicesRequest) returns (ListAppendicesResponse);
+  rpc AddAppendix(AddAppendixRequest) returns (AddAppendixResponse);
+  rpc UpdateAppendix(UpdateAppendixRequest) returns (UpdateAppendixResponse);
+  rpc ReorderAppendices(ReorderAppendicesRequest) returns (ReorderAppendicesResponse);
+  rpc DeleteAppendix(DeleteAppendixRequest) returns (DeleteAppendixResponse);
+}

@@ -1,0 +1,55 @@
+// Copyright 2026 The Steward Authors
+// SPDX-License-Identifier: Apache-2.0
+
+syntax = "proto3";
+
+package steward.core.v1;
+
+option go_package = "github.com/Steward-GRC/steward-core/gen/go/steward/core/v1;corev1";
+
+// Asset is an editor image, stored once in object storage and embedded in
+// documents by its url. The url is a path the gateway serves, never a
+// presigned object-store link.
+message Asset {
+  string id = 1;
+  // For example /api/assets/<id>.
+  string url = 2;
+  // The sniffed image type.
+  string content_type = 3;
+  int64 size_bytes = 4;
+  // The cleaned original name, kept as metadata.
+  string filename = 5;
+  string created_by_user_id = 6;
+  // RFC 3339.
+  string created_at = 7;
+}
+
+// UploadAssetRequest carries the bytes. content_type is advisory: the bytes
+// are sniffed and only images are kept.
+message UploadAssetRequest {
+  bytes data = 1;
+  string content_type = 2;
+  string filename = 3;
+  string created_by_user_id = 4;
+}
+
+message UploadAssetResponse {
+  Asset asset = 1;
+}
+
+message GetAssetRequest {
+  string id = 1;
+}
+
+message GetAssetResponse {
+  bytes data = 1;
+  string content_type = 2;
+  int64 size_bytes = 3;
+  string filename = 4;
+}
+
+// AssetService stores and serves editor images.
+service AssetService {
+  rpc UploadAsset(UploadAssetRequest) returns (UploadAssetResponse);
+  rpc GetAsset(GetAssetRequest) returns (GetAssetResponse);
+}
