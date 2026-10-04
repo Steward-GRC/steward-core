@@ -1,0 +1,33 @@
+// Copyright 2026 The Steward Authors
+// SPDX-License-Identifier: Apache-2.0
+
+syntax = "proto3";
+
+package steward.core.v1;
+
+option go_package = "github.com/Steward-GRC/steward-core/gen/go/steward/core/v1;corev1";
+
+// EmailServiceConfig is the whole outbound email-service configuration,
+// decrypted key included.
+message EmailServiceConfig {
+  string api_key = 1;
+  string domain = 2;
+  string region = 3;
+  string from_address = 4;
+  bool enabled = 5;
+  string updated_by = 6;
+  string provider = 7;
+}
+
+message GetEmailServiceSecretRequest {}
+
+message GetEmailServiceSecretResponse {
+  EmailServiceConfig config = 1;
+}
+
+// EmailServiceSecretService is internal: only the service that sends mail
+// calls it. It is kept apart from SettingsService so the gateway can never
+// reach the key. Never log its response.
+service EmailServiceSecretService {
+  rpc GetEmailServiceSecret(GetEmailServiceSecretRequest) returns (GetEmailServiceSecretResponse);
+}

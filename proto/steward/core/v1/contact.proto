@@ -1,0 +1,116 @@
+// Copyright 2026 The Steward Authors
+// SPDX-License-Identifier: Apache-2.0
+
+syntax = "proto3";
+
+package steward.core.v1;
+
+option go_package = "github.com/Steward-GRC/steward-core/gen/go/steward/core/v1;corev1";
+
+// ContactBlock is a reusable block of contact details in the shared library.
+// Documents attach blocks by id and render them live, so an edit shows on
+// every document that uses the block.
+message ContactBlock {
+  string id = 1;
+  string name = 2;
+  string role = 3;
+  string department = 4;
+  string email = 5;
+  string phone = 6;
+  // For example "Mon-Fri 9-5".
+  string hours = 7;
+  string notes = 8;
+  // Required: the label authors pick by.
+  string label = 9;
+  // Hidden from the library and the picker, but still shown where attached.
+  bool archived = 10;
+  // The number of documents that attach the block.
+  int32 used_by_count = 11;
+}
+
+// ContactBlockInput is the editable part of a block; label is required.
+message ContactBlockInput {
+  string name = 1;
+  string role = 2;
+  string department = 3;
+  string email = 4;
+  string phone = 5;
+  string hours = 6;
+  string notes = 7;
+  string label = 8;
+}
+
+message ListContactBlocksRequest {
+  // False lists active blocks only.
+  bool include_archived = 1;
+}
+
+message ListContactBlocksResponse {
+  // Ordered by label.
+  repeated ContactBlock blocks = 1;
+}
+
+message SetContactBlockArchivedRequest {
+  string id = 1;
+  bool archived = 2;
+}
+
+message SetContactBlockArchivedResponse {
+  ContactBlock block = 1;
+}
+
+message CreateContactBlockRequest {
+  ContactBlockInput block = 1;
+}
+
+message CreateContactBlockResponse {
+  ContactBlock block = 1;
+}
+
+message UpdateContactBlockRequest {
+  string id = 1;
+  ContactBlockInput block = 2;
+}
+
+message UpdateContactBlockResponse {
+  ContactBlock block = 1;
+}
+
+// DeleteContactBlockRequest removes a block and detaches it everywhere.
+message DeleteContactBlockRequest {
+  string id = 1;
+}
+
+message DeleteContactBlockResponse {}
+
+message ListPolicyContactBlocksRequest {
+  string policy_id = 1;
+}
+
+message ListPolicyContactBlocksResponse {
+  // In the order they were attached.
+  repeated ContactBlock blocks = 1;
+}
+
+// SetPolicyContactBlocksRequest replaces a document's attached blocks, in
+// order. Unknown ids are refused.
+message SetPolicyContactBlocksRequest {
+  string policy_id = 1;
+  repeated string contact_block_ids = 2;
+}
+
+message SetPolicyContactBlocksResponse {
+  repeated ContactBlock blocks = 1;
+}
+
+// ContactService manages the contact-block library and each document's
+// attachments. Attaching is not versioned.
+service ContactService {
+  rpc ListContactBlocks(ListContactBlocksRequest) returns (ListContactBlocksResponse);
+  rpc CreateContactBlock(CreateContactBlockRequest) returns (CreateContactBlockResponse);
+  rpc UpdateContactBlock(UpdateContactBlockRequest) returns (UpdateContactBlockResponse);
+  rpc DeleteContactBlock(DeleteContactBlockRequest) returns (DeleteContactBlockResponse);
+  rpc SetContactBlockArchived(SetContactBlockArchivedRequest) returns (SetContactBlockArchivedResponse);
+  rpc ListPolicyContactBlocks(ListPolicyContactBlocksRequest) returns (ListPolicyContactBlocksResponse);
+  rpc SetPolicyContactBlocks(SetPolicyContactBlocksRequest) returns (SetPolicyContactBlocksResponse);
+}

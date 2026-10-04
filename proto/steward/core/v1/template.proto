@@ -1,0 +1,175 @@
+// Copyright 2026 The Steward Authors
+// SPDX-License-Identifier: Apache-2.0
+
+syntax = "proto3";
+
+package steward.core.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/Steward-GRC/steward-core/gen/go/steward/core/v1;corev1";
+
+enum TemplateVersionStatus {
+  TEMPLATE_VERSION_STATUS_UNSPECIFIED = 0;
+  TEMPLATE_VERSION_STATUS_DRAFT = 1;
+  TEMPLATE_VERSION_STATUS_PUBLISHED = 2;
+  TEMPLATE_VERSION_STATUS_ARCHIVED = 3;
+}
+
+enum BlockType {
+  BLOCK_TYPE_UNSPECIFIED = 0;
+  BLOCK_TYPE_BOILERPLATE = 1;
+  BLOCK_TYPE_EDITABLE = 2;
+}
+
+message Block {
+  BlockType type = 1;
+  // The boilerplate content.
+  string content_json = 2;
+}
+
+message Section {
+  string key = 1;
+  string title = 2;
+  int32 order = 3;
+  repeated Block blocks = 4;
+  // Heading depth, 1 to 5; unset means 1.
+  int32 level = 5;
+  // A required section must be filled before a document can be submitted.
+  bool required = 6;
+}
+
+message Template {
+  string id = 1;
+  string name = 2;
+  string owner_category_id = 3;
+  // The display code, TPL-NNN.
+  string code = 4;
+  // RFC 3339; empty while active. A retired template is hidden, but its
+  // published versions stay so the documents pinned to them keep working.
+  string retired_at = 5;
+}
+
+message TemplateVersion {
+  string id = 1;
+  string template_id = 2;
+  int32 version_no = 3;
+  TemplateVersionStatus status = 4;
+  repeated Section sections = 5;
+  google.protobuf.Timestamp created_at = 6;
+}
+
+message CreateTemplateRequest {
+  string name = 1;
+  string owner_category_id = 2;
+  string actor_user_id = 3;
+}
+
+message CreateTemplateResponse {
+  Template template = 1;
+}
+
+message CreateTemplateVersionRequest {
+  string template_id = 1;
+  repeated Section sections = 2;
+  string actor_user_id = 3;
+}
+
+message CreateTemplateVersionResponse {
+  TemplateVersion version = 1;
+}
+
+message PublishTemplateVersionRequest {
+  string id = 1;
+  string actor_user_id = 2;
+}
+
+message PublishTemplateVersionResponse {
+  TemplateVersion version = 1;
+}
+
+message GetLatestTemplateVersionRequest {
+  string template_id = 1;
+}
+
+message GetLatestTemplateVersionResponse {
+  TemplateVersion version = 1;
+}
+
+// UpdateTemplateVersionSectionsRequest replaces a draft version's sections.
+// Published versions are immutable.
+message UpdateTemplateVersionSectionsRequest {
+  string id = 1;
+  repeated Section sections = 2;
+  string actor_user_id = 3;
+}
+
+message UpdateTemplateVersionSectionsResponse {
+  TemplateVersion version = 1;
+}
+
+message ListTemplateVersionsRequest {
+  string template_id = 1;
+}
+
+message ListTemplateVersionsResponse {
+  // Every version, drafts included, newest first.
+  repeated TemplateVersion versions = 1;
+}
+
+// DeleteTemplateVersionRequest discards a draft version.
+message DeleteTemplateVersionRequest {
+  string id = 1;
+  string actor_user_id = 2;
+}
+
+message DeleteTemplateVersionResponse {}
+
+message ListTemplatesRequest {
+  // Empty lists every template.
+  string owner_category_id = 1;
+}
+
+message ListTemplatesResponse {
+  repeated Template templates = 1;
+}
+
+message RetireTemplateRequest {
+  string id = 1;
+}
+
+message RetireTemplateResponse {
+  Template template = 1;
+}
+
+// DeleteTemplateRequest removes a template outright. It is refused while any
+// document uses it; retire it instead.
+message DeleteTemplateRequest {
+  string id = 1;
+}
+
+message DeleteTemplateResponse {}
+
+// RenameTemplateRequest changes the name only; it makes no new version.
+message RenameTemplateRequest {
+  string id = 1;
+  string name = 2;
+}
+
+message RenameTemplateResponse {
+  Template template = 1;
+}
+
+service TemplateService {
+  rpc CreateTemplate(CreateTemplateRequest) returns (CreateTemplateResponse);
+  rpc CreateTemplateVersion(CreateTemplateVersionRequest) returns (CreateTemplateVersionResponse);
+  rpc PublishTemplateVersion(PublishTemplateVersionRequest) returns (PublishTemplateVersionResponse);
+  rpc GetLatestTemplateVersion(GetLatestTemplateVersionRequest) returns (GetLatestTemplateVersionResponse);
+  rpc UpdateTemplateVersionSections(UpdateTemplateVersionSectionsRequest) returns (UpdateTemplateVersionSectionsResponse);
+  rpc ListTemplateVersions(ListTemplateVersionsRequest) returns (ListTemplateVersionsResponse);
+  rpc DeleteTemplateVersion(DeleteTemplateVersionRequest) returns (DeleteTemplateVersionResponse);
+  rpc ListTemplates(ListTemplatesRequest) returns (ListTemplatesResponse);
+  rpc RetireTemplate(RetireTemplateRequest) returns (RetireTemplateResponse);
+  rpc DeleteTemplate(DeleteTemplateRequest) returns (DeleteTemplateResponse);
+  rpc RenameTemplate(RenameTemplateRequest) returns (RenameTemplateResponse);
+}

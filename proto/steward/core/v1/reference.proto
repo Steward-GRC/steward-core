@@ -1,0 +1,128 @@
+// Copyright 2026 The Steward Authors
+// SPDX-License-Identifier: Apache-2.0
+
+syntax = "proto3";
+
+package steward.core.v1;
+
+option go_package = "github.com/Steward-GRC/steward-core/gen/go/steward/core/v1;corev1";
+
+// ReferenceKind classifies a library reference: a formal standard, a free
+// text note or an external link.
+enum ReferenceKind {
+  REFERENCE_KIND_UNSPECIFIED = 0;
+  REFERENCE_KIND_STANDARD = 1;
+  REFERENCE_KIND_TEXT = 2;
+  REFERENCE_KIND_LINK = 3;
+}
+
+// Reference is an entry in the shared references and standards library.
+// Documents attach references by id and render them live.
+message Reference {
+  string id = 1;
+  // Required: the label authors pick by.
+  string label = 2;
+  ReferenceKind kind = 3;
+  // A section or clause citation.
+  string clause = 4;
+  // Free text, for the text kind.
+  string body = 5;
+  // The link, for the link kind.
+  string url = 6;
+  // Hidden from the library and the picker, but still shown where attached.
+  bool archived = 7;
+  string created_by_user_id = 8;
+  // RFC 3339.
+  string created_at = 9;
+  // The number of documents that attach the reference.
+  int32 used_by_count = 10;
+}
+
+// ReferenceInput is the editable part of a reference; label is required.
+message ReferenceInput {
+  string label = 1;
+  ReferenceKind kind = 2;
+  string clause = 3;
+  string body = 4;
+  string url = 5;
+}
+
+message ListReferencesRequest {
+  // False lists active references only.
+  bool include_archived = 1;
+}
+
+message ListReferencesResponse {
+  // Ordered by label.
+  repeated Reference references = 1;
+}
+
+message CreateReferenceRequest {
+  ReferenceInput input = 1;
+  string actor_user_id = 2;
+}
+
+message CreateReferenceResponse {
+  Reference reference = 1;
+}
+
+message UpdateReferenceRequest {
+  string id = 1;
+  ReferenceInput input = 2;
+  string actor_user_id = 3;
+}
+
+message UpdateReferenceResponse {
+  Reference reference = 1;
+}
+
+message SetReferenceArchivedRequest {
+  string id = 1;
+  bool archived = 2;
+  string actor_user_id = 3;
+}
+
+message SetReferenceArchivedResponse {
+  Reference reference = 1;
+}
+
+// DeleteReferenceRequest removes a reference and detaches it everywhere.
+message DeleteReferenceRequest {
+  string id = 1;
+  string actor_user_id = 2;
+}
+
+message DeleteReferenceResponse {}
+
+message ListPolicyReferencesRequest {
+  string policy_id = 1;
+}
+
+message ListPolicyReferencesResponse {
+  // In the order they were attached.
+  repeated Reference references = 1;
+}
+
+// SetPolicyReferencesRequest replaces a document's attached references, in
+// order. Unknown ids are refused.
+message SetPolicyReferencesRequest {
+  string policy_id = 1;
+  repeated string reference_ids = 2;
+  string actor_user_id = 3;
+}
+
+message SetPolicyReferencesResponse {
+  repeated Reference references = 1;
+}
+
+// ReferenceService manages the references library and each document's
+// attachments. Attaching is not versioned.
+service ReferenceService {
+  rpc ListReferences(ListReferencesRequest) returns (ListReferencesResponse);
+  rpc CreateReference(CreateReferenceRequest) returns (CreateReferenceResponse);
+  rpc UpdateReference(UpdateReferenceRequest) returns (UpdateReferenceResponse);
+  rpc DeleteReference(DeleteReferenceRequest) returns (DeleteReferenceResponse);
+  rpc SetReferenceArchived(SetReferenceArchivedRequest) returns (SetReferenceArchivedResponse);
+  rpc ListPolicyReferences(ListPolicyReferencesRequest) returns (ListPolicyReferencesResponse);
+  rpc SetPolicyReferences(SetPolicyReferencesRequest) returns (SetPolicyReferencesResponse);
+}

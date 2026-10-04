@@ -1,0 +1,276 @@
+// Copyright 2026 The Steward Authors
+// SPDX-License-Identifier: Apache-2.0
+
+syntax = "proto3";
+
+package steward.core.v1;
+
+option go_package = "github.com/Steward-GRC/steward-core/gen/go/steward/core/v1;corev1";
+
+// AckTrigger says when a published document needs acknowledging.
+enum AckTrigger {
+  // Read as ACK_TRIGGER_NONE.
+  ACK_TRIGGER_UNSPECIFIED = 0;
+  ACK_TRIGGER_NONE = 1;
+  ACK_TRIGGER_ON_PUBLISH = 2;
+  ACK_TRIGGER_ON_CHANGE = 3;
+}
+
+// ReviewCadence says how often a category's documents are reviewed.
+enum ReviewCadence {
+  // Read as REVIEW_CADENCE_NONE.
+  REVIEW_CADENCE_UNSPECIFIED = 0;
+  REVIEW_CADENCE_NONE = 1;
+  REVIEW_CADENCE_ANNUAL = 2;
+  REVIEW_CADENCE_BIENNIAL = 3;
+  REVIEW_CADENCE_ON_DATE = 4;
+}
+
+// Category is one node of the category tree (at most three levels deep).
+// Governance settings inherit down the tree: a field that isn't explicitly set
+// takes the nearest ancestor's value.
+message Category {
+  string id = 1;
+  string name = 2;
+  string slug = 3;
+  // Empty for a root category.
+  string parent_id = 4;
+  string default_template_id = 5;
+  string default_workflow_id = 6;
+  // Owner user ids.
+  repeated string owners = 7;
+  // Directory group names that must acknowledge this category's documents.
+  repeated string audience_group_ids = 8;
+  AckTrigger ack_triggers = 9;
+  ReviewCadence review_cadence = 10;
+  // ISO date, or empty.
+  string review_date = 11;
+  // Directory group names left out of the acknowledgement audience. An empty
+  // list that is set means "no exclusions".
+  repeated string exclusion_group_ids = 12;
+  // True when audience_group_ids is set here rather than inherited.
+  bool audience_group_ids_set = 13;
+  // True when exclusion_group_ids is set here rather than inherited.
+  bool exclusion_group_ids_set = 14;
+  // With default_template_id, a three-state default template: both unset
+  // inherits, default_template_none means freeform (and stops inheritance),
+  // and a set default_template_id names the template.
+  bool default_template_none = 15;
+  // When the resolved value is true the acknowledgement audience is every
+  // user and audience_group_ids is ignored. ack_triggers still decides whether
+  // an acknowledgement is needed at all.
+  bool ack_everyone = 16;
+  // True when ack_everyone is set here rather than inherited.
+  bool ack_everyone_set = 17;
+}
+
+message CreateCategoryRequest {
+  string name = 1;
+  string slug = 2;
+  string parent_id = 3;
+  string actor_user_id = 4;
+}
+
+message CreateCategoryResponse {
+  Category category = 1;
+}
+
+message GetCategoryRequest {
+  string id = 1;
+}
+
+message GetCategoryResponse {
+  Category category = 1;
+}
+
+message ListCategoryChildrenRequest {
+  // Empty lists the roots.
+  string parent_id = 1;
+}
+
+message ListCategoryChildrenResponse {
+  repeated Category categories = 1;
+}
+
+message SetCategoryDefaultsRequest {
+  string id = 1;
+  string default_template_id = 2;
+  string default_workflow_id = 3;
+  string actor_user_id = 4;
+  // True sets the default template to freeform: default_template_id is
+  // ignored and inheritance stops here.
+  bool default_template_none = 5;
+}
+
+message SetCategoryDefaultsResponse {
+  Category category = 1;
+}
+
+// RenameCategoryRequest changes the name and slug. Existing document numbers
+// never change; the slug only shapes numbers minted after the rename.
+message RenameCategoryRequest {
+  string id = 1;
+  string name = 2;
+  string slug = 3;
+}
+
+message RenameCategoryResponse {
+  Category category = 1;
+}
+
+// DeleteCategoryRequest removes a category and its descendants. It is refused
+// while the category or any descendant holds a document.
+message DeleteCategoryRequest {
+  string id = 1;
+}
+
+message DeleteCategoryResponse {
+  bool deleted = 1;
+}
+
+// MoveCategoryRequest re-parents a category and its subtree. Documents keep
+// their home category and governance is resolved live from the ancestor
+// chain, so the move rewrites no document. It is refused when any node would
+// end up deeper than three levels, or when it would create a cycle.
+message MoveCategoryRequest {
+  string category_id = 1;
+  // Empty moves the category to the root.
+  string new_parent_id = 2;
+}
+
+message MoveCategoryResponse {
+  Category category = 1;
+  // The number of categories in the moved subtree.
+  uint32 affected_count = 2;
+}
+
+message SetGovernanceRequest {
+  string id = 1;
+  repeated string owners = 2;
+  repeated string audience_group_ids = 3;
+  AckTrigger ack_triggers = 4;
+  ReviewCadence review_cadence = 5;
+  string review_date = 6;
+  string actor_user_id = 7;
+  repeated string exclusion_group_ids = 8;
+  // When true the matching list is written, even when empty; when false the
+  // stored value (or inheritance) is kept.
+  bool audience_group_ids_provided = 9;
+  bool exclusion_group_ids_provided = 10;
+  bool ack_everyone = 11;
+  // When true ack_everyone is written; when false the stored value is kept.
+  bool ack_everyone_provided = 12;
+}
+
+message SetGovernanceResponse {
+  Category category = 1;
+}
+
+// GetEffectiveGovernanceRequest resolves the inherited acknowledgement
+// audience of a category, nearest ancestor first.
+message GetEffectiveGovernanceRequest {
+  string category_id = 1;
+}
+
+message GetEffectiveGovernanceResponse {
+  repeated string ack_audience_groups = 1;
+  repeated string exclusion_groups = 2;
+  // True when some category in the chain sets an audience, even an empty one.
+  bool audience_set = 3;
+  // True when some category in the chain sets exclusions, even empty ones.
+  bool exclusion_set = 4;
+  // When true the audience is every user and ack_audience_groups is ignored.
+  bool ack_everyone = 5;
+  // True when some category in the chain sets ack_everyone.
+  bool ack_everyone_set = 6;
+}
+
+// GrantEffect is one cell of a category rule. A blank cell has no opinion, so
+// evaluation falls through to the next rule.
+enum GrantEffect {
+  GRANT_EFFECT_UNSPECIFIED = 0;
+  GRANT_EFFECT_ALLOW = 1;
+  GRANT_EFFECT_DENY = 2;
+}
+
+// RuleSubjectKind says whom a category rule targets.
+enum RuleSubjectKind {
+  RULE_SUBJECT_KIND_UNSPECIFIED = 0;
+  RULE_SUBJECT_KIND_EVERYONE = 1;
+  RULE_SUBJECT_KIND_GROUP = 2;
+  RULE_SUBJECT_KIND_USER = 3;
+}
+
+// CategoryRule is one ordered row of a category's access rules: a subject and
+// a grant per action. The first rule with an opinion wins.
+message CategoryRule {
+  RuleSubjectKind subject_kind = 1;
+  // A directory group name or a user id; empty for everyone.
+  string subject_ref = 2;
+  GrantEffect read = 3;
+  GrantEffect ack = 4;
+  GrantEffect approve = 5;
+  GrantEffect author = 6;
+}
+
+message GetCategoryRulesetRequest {
+  string category_id = 1;
+}
+
+message GetCategoryRulesetResponse {
+  repeated CategoryRule rules = 1;
+}
+
+message SetCategoryRulesetRequest {
+  string category_id = 1;
+  repeated CategoryRule rules = 2;
+}
+
+message SetCategoryRulesetResponse {
+  repeated CategoryRule rules = 1;
+}
+
+// RemovedCategoryRule is one rule a purge removed, or would remove on a dry
+// run.
+message RemovedCategoryRule {
+  string category_id = 1;
+  CategoryRule rule = 2;
+}
+
+message PurgeUserCategoryRulesRequest {
+  // The user whose user-subject rules are removed.
+  string user_id = 1;
+  // The admin doing it, recorded in audit.
+  string actor_user_id = 2;
+  // True changes nothing and emits no audit event: it reports what would go.
+  bool dry_run = 3;
+}
+
+message PurgeUserCategoryRulesResponse {
+  int32 removed_rules = 1;
+  repeated string affected_category_ids = 2;
+  repeated RemovedCategoryRule rules = 3;
+}
+
+// CategoryService manages the category tree, its governance and its access
+// rules. Access to each RPC is enforced at the gateway.
+service CategoryService {
+  rpc CreateCategory(CreateCategoryRequest) returns (CreateCategoryResponse);
+  rpc GetCategory(GetCategoryRequest) returns (GetCategoryResponse);
+  rpc ListCategoryChildren(ListCategoryChildrenRequest) returns (ListCategoryChildrenResponse);
+  rpc SetCategoryDefaults(SetCategoryDefaultsRequest) returns (SetCategoryDefaultsResponse);
+  rpc RenameCategory(RenameCategoryRequest) returns (RenameCategoryResponse);
+  rpc DeleteCategory(DeleteCategoryRequest) returns (DeleteCategoryResponse);
+  rpc MoveCategory(MoveCategoryRequest) returns (MoveCategoryResponse);
+  rpc SetGovernance(SetGovernanceRequest) returns (SetGovernanceResponse);
+  rpc GetEffectiveGovernance(GetEffectiveGovernanceRequest) returns (GetEffectiveGovernanceResponse);
+  rpc GetCategoryRuleset(GetCategoryRulesetRequest) returns (GetCategoryRulesetResponse);
+  // SetCategoryRuleset replaces a category's rules. They are validated with
+  // the steward-authz rule type first.
+  rpc SetCategoryRuleset(SetCategoryRulesetRequest) returns (SetCategoryRulesetResponse);
+  // PurgeUserCategoryRules removes every user-subject rule naming a user,
+  // across all categories, in one audited transaction, so a deleted account
+  // leaves no grant behind. Group and everyone rules, and records naming the
+  // user as an actor, are kept. Idempotent.
+  rpc PurgeUserCategoryRules(PurgeUserCategoryRulesRequest) returns (PurgeUserCategoryRulesResponse);
+}
