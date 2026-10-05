@@ -1,0 +1,91 @@
+// Copyright 2026 The Steward Authors
+// SPDX-License-Identifier: Apache-2.0
+
+syntax = "proto3";
+
+package steward.core.v1;
+
+option go_package = "github.com/Steward-GRC/steward-core/gen/go/steward/core/v1;corev1";
+
+// Announcement is a site-wide banner shown at the top of every app while
+// enabled. level is "info" or "warning".
+message Announcement {
+  bool enabled = 1;
+  string level = 2;
+  string message = 3;
+}
+
+// Maintenance is a site-wide maintenance notice shown while enabled.
+message Maintenance {
+  bool enabled = 1;
+  string message = 2;
+}
+
+// GlobalSettings is the stored settings singleton. Every field is an adopter
+// setting with an empty default.
+message GlobalSettings {
+  Announcement announcement = 1;
+  Maintenance maintenance = 2;
+}
+
+message GetGlobalSettingsRequest {}
+
+message GetGlobalSettingsResponse {
+  GlobalSettings settings = 1;
+}
+
+message SetGlobalSettingsRequest {
+  GlobalSettings settings = 1;
+  string actor_user_id = 2;
+}
+
+message SetGlobalSettingsResponse {
+  GlobalSettings settings = 1;
+}
+
+// EmailServiceStatus is the keyless view of the outbound email-service
+// configuration. It has no field for the key, so the key can't leave through
+// SettingsService.
+message EmailServiceStatus {
+  bool api_key_set = 1;
+  string domain = 2;
+  string region = 3;
+  string from_address = 4;
+  bool enabled = 5;
+  string updated_by = 6;
+  // The provider adapter the sender uses, picked by the adopter.
+  string provider = 7;
+}
+
+// SetEmailServiceConfigRequest writes the configuration. api_key has three
+// states: unset keeps the stored key, empty clears it, any other value
+// replaces it. The key is encrypted at rest.
+message SetEmailServiceConfigRequest {
+  optional string api_key = 1;
+  string domain = 2;
+  string region = 3;
+  string from_address = 4;
+  bool enabled = 5;
+  string actor_user_id = 6;
+  string provider = 7;
+}
+
+message SetEmailServiceConfigResponse {
+  EmailServiceStatus status = 1;
+}
+
+message EmailServiceConfigStatusRequest {}
+
+message EmailServiceConfigStatusResponse {
+  EmailServiceStatus status = 1;
+}
+
+// SettingsService reads and writes the global settings and the keyless
+// email-service configuration. No RPC here returns the key: that is
+// EmailServiceSecretService, which the gateway never serves.
+service SettingsService {
+  rpc GetGlobalSettings(GetGlobalSettingsRequest) returns (GetGlobalSettingsResponse);
+  rpc SetGlobalSettings(SetGlobalSettingsRequest) returns (SetGlobalSettingsResponse);
+  rpc SetEmailServiceConfig(SetEmailServiceConfigRequest) returns (SetEmailServiceConfigResponse);
+  rpc EmailServiceConfigStatus(EmailServiceConfigStatusRequest) returns (EmailServiceConfigStatusResponse);
+}

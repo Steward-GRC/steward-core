@@ -1,0 +1,43 @@
+// Copyright 2026 The Steward Authors
+// SPDX-License-Identifier: Apache-2.0
+
+syntax = "proto3";
+
+package steward.core.v1;
+
+option go_package = "github.com/Steward-GRC/steward-core/gen/go/steward/core/v1;corev1";
+
+// RelatedPolicy is one related-document link, with the linked policy's
+// current number and title read live.
+message RelatedPolicy {
+  string policy_id = 1;
+  string number = 2;
+  string title = 3;
+}
+
+message ListRelatedPoliciesRequest {
+  string policy_id = 1;
+}
+
+message ListRelatedPoliciesResponse {
+  // In the order they were set.
+  repeated RelatedPolicy related = 1;
+}
+
+// SetRelatedPoliciesRequest replaces the links. Self links and duplicates are
+// dropped; unknown ids are refused.
+message SetRelatedPoliciesRequest {
+  string policy_id = 1;
+  repeated string related_policy_ids = 2;
+}
+
+message SetRelatedPoliciesResponse {
+  repeated RelatedPolicy related = 1;
+}
+
+// RelationService keeps each policy's related links: a flat, one-way list
+// that is not versioned.
+service RelationService {
+  rpc ListRelatedPolicies(ListRelatedPoliciesRequest) returns (ListRelatedPoliciesResponse);
+  rpc SetRelatedPolicies(SetRelatedPoliciesRequest) returns (SetRelatedPoliciesResponse);
+}
