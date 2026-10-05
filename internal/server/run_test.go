@@ -7,10 +7,12 @@ import (
 	"context"
 	"errors"
 	"net"
+	"net/http"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/Bugs5382/go-buildinfo/health"
 	grpcactor "github.com/Bugs5382/go-grpc-actor"
 	log "github.com/Bugs5382/go-log"
 	"github.com/stretchr/testify/require"
@@ -18,6 +20,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
 	corev1 "github.com/Steward-GRC/steward-core/gen/go/steward/core/v1"
@@ -92,17 +95,21 @@ func TestServeAcceptsAnEditorImageAboveTheDefaultLimit(t *testing.T) {
 	require.GreaterOrEqual(t, MaxMessageBytes, 10<<20+1<<20, "a 10 MiB image plus framing fits one message")
 }
 
-func TestReadinessFollowsTheChecksAndLivenessDoesNot(t *testing.T) {
+func downChecker(t *testing.T, up *atomic.Bool) *health.Checker {
+	t.Helper()
+	c := health.New(health.WithTTL(time.Millisecond))
+	require.NoError(t, c.Register(health.Dependency{Name: "postgres", Required: true, Check: func(context.Context) error {
+		if up.Load() {
+			return nil
+		}
+		return errors.New("postgres down")
+	}}))
+	return c
+}
+
+func TestReadinessFollowsTheCheckerAndLivenessDoesNot(t *testing.T) {
 	var up atomic.Bool
-	conn, _, stop := serve(t, Options{
-		Readiness: []Check{func(context.Context) error {
-			if up.Load() {
-				return nil
-			}
-			return errors.New("postgres down")
-		}},
-		CheckInterval: 20 * time.Millisecond,
-	})
+	conn, _, stop := serve(t, Options{Checker: downChecker(t, &up), CheckInterval: 20 * time.Millisecond})
 	defer stop()
 	hc := healthpb.NewHealthClient(conn)
 	status := func(svc string) healthpb.HealthCheckResponse_ServingStatus {
@@ -110,8 +117,50 @@ func TestReadinessFollowsTheChecksAndLivenessDoesNot(t *testing.T) {
 		require.NoError(t, err)
 		return r.GetStatus()
 	}
-	require.Eventually(t, func() bool { return status(ReadinessService) == healthpb.HealthCheckResponse_NOT_SERVING }, 2*time.Second, 10*time.Millisecond)
-	require.Equal(t, healthpb.HealthCheckResponse_SERVING, status(""), "liveness never follows a dependency")
+	require.Equal(t, healthpb.HealthCheckResponse_NOT_SERVING, status(""))
+	require.Equal(t, healthpb.HealthCheckResponse_NOT_SERVING, status(ReadinessService))
+	require.Equal(t, healthpb.HealthCheckResponse_SERVING, status(LivenessService), "liveness never follows a dependency")
 	up.Store(true)
 	require.Eventually(t, func() bool { return status(ReadinessService) == healthpb.HealthCheckResponse_SERVING }, 2*time.Second, 10*time.Millisecond)
+	require.Equal(t, healthpb.HealthCheckResponse_SERVING, status(""))
+}
+
+func TestHealthCheckCarriesTheBuildAndDependencyHeaders(t *testing.T) {
+	var up atomic.Bool
+	conn, _, stop := serve(t, Options{Checker: downChecker(t, &up)})
+	defer stop()
+	var md metadata.MD
+	_, err := healthpb.NewHealthClient(conn).Check(context.Background(), &healthpb.HealthCheckRequest{}, grpc.Header(&md))
+	require.NoError(t, err)
+	require.Equal(t, []string{"dev"}, md.Get("steward-version"), "an unstamped build")
+	require.NotEmpty(t, md.Get("steward-commit"))
+	require.Equal(t, []string{"down"}, md.Get("steward-depstate-postgres"))
+}
+
+func TestProbesServeLivezAndReadyzOnly(t *testing.T) {
+	var up atomic.Bool
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- ServeProbes(ctx, lis, downChecker(t, &up)) }()
+	defer func() {
+		cancel()
+		require.NoError(t, <-done, "ServeProbes returns nil after shutdown")
+	}()
+	get := func(path string) (int, http.Header) {
+		res, err := http.Get("http://" + lis.Addr().String() + path)
+		require.NoError(t, err)
+		_ = res.Body.Close()
+		return res.StatusCode, res.Header
+	}
+	code, _ := get("/livez")
+	require.Equal(t, http.StatusOK, code, "liveness never follows a dependency")
+	code, h := get("/readyz")
+	require.Equal(t, http.StatusServiceUnavailable, code)
+	require.Equal(t, "dev", h.Get("Steward-Version"))
+	up.Store(true)
+	require.Eventually(t, func() bool { c, _ := get("/readyz"); return c == http.StatusOK }, 2*time.Second, 10*time.Millisecond)
+	code, _ = get("/health")
+	require.Equal(t, http.StatusNotFound, code, "there is no plain /health")
 }

@@ -9,10 +9,25 @@ Redis is unreachable the service logs a warning and reads from Postgres; without
 
 ## Probes
 
-- **Liveness:** `grpc.health.v1` with the empty service name. It reports the process only; never
-  point liveness at a dependency.
-- **Readiness:** `grpc.health.v1` with the service name `readiness`. It turns `NOT_SERVING` while
-  Postgres or RabbitMQ is unreachable and recovers on its own, checked every 10 seconds.
+Readiness follows go-buildinfo's dependency checker. Each check has a 2-second timeout, and a result
+is reused for 5 seconds.
+
+| Dependency | Required | When it's down |
+| --- | --- | --- |
+| `postgres` | yes | Not ready: nothing can be read or written. |
+| `rabbitmq` | yes | Not ready: writes can't be audited. |
+| `valkey` | no, reported when `REDIS_ADDR` is set | Degraded, still ready: reads go to Postgres. If Valkey was unreachable at start-up, the cache stays off and reports degraded until a restart. |
+| `objectstore` | no, reported when `S3_ENDPOINT` is set | Degraded, still ready: only editor images fail. |
+
+- **HTTP on `PROBE_PORT` (8080):** `GET /livez` is 200 while the process is up and never checks a
+  dependency. `GET /readyz` is 200 while ready and 503 while a required dependency is down; its JSON
+  body lists every dependency with its state and error class. There's no plain `/health`.
+- **gRPC on `GRPC_PORT`:** `grpc.health.v1` with the service name `liveness` reports the process
+  only. The empty name and `readiness` follow readiness. Every `Health/Check` answer carries
+  `steward-version`, `steward-commit`, `steward-dep-postgres` (the server version) and
+  `steward-depstate-<name>` (`ok`, `degraded` or `down`).
+- Never point liveness at a dependency: a database outage would restart every replica.
+- Readiness recovers on its own once the dependency is back.
 
 ## Common problems
 
@@ -23,7 +38,7 @@ Redis is unreachable the service logs a warning and reads from Postgres; without
 | `INVALID_CATEGORY_RULE` | The rule named in the message has no subject, a subject where none belongs, or an unknown grant. |
 | The email-service key can't be read | `CORE_SETTINGS_KEY` changed since the key was saved. Restore the old key, or save the email-service key again. |
 | Act-as events name the target, not the admin | The gateway isn't a trusted caller: check mTLS and `CORE_TRUSTED_CALLERS`. |
-| No events reach audit | RabbitMQ readiness, then the `audit` exchange and its binding to audit's queue. |
+| No events reach audit | `steward-depstate-rabbitmq` or `/readyz`, then the `audit` exchange and its binding to audit's queue. |
 
 ## Backups
 

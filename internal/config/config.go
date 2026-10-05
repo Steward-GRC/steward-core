@@ -42,7 +42,9 @@ type Config struct {
 	MigrationsDir string
 	RabbitURL     string
 	GRPCPort      string
-	OTLPEndpoint  string
+	// ProbePort serves /livez and /readyz over plain HTTP.
+	ProbePort    string
+	OTLPEndpoint string
 	// SettingsKey encrypts the secrets core stores, such as the email-service
 	// key.
 	SettingsKey []byte
@@ -71,6 +73,7 @@ func Load(getenv func(string) string) (Config, error) {
 		MigrationsDir: or("MIGRATIONS_DIR", "migrations"),
 		RabbitURL:     getenv("RABBITMQ_URL"),
 		GRPCPort:      or("GRPC_PORT", "9090"),
+		ProbePort:     or("PROBE_PORT", "8080"),
 		OTLPEndpoint:  or("OTEL_EXPORTER_OTLP_ENDPOINT", "localhost:4317"),
 		RedisAddr:     getenv("REDIS_ADDR"),
 		RedisPassword: getenv("REDIS_PASSWORD"),

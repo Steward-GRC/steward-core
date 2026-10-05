@@ -6,6 +6,7 @@ toolchain go1.26.6
 
 require (
 	github.com/Bugs5382/go-apperr v1.2.1
+	github.com/Bugs5382/go-buildinfo v1.0.0
 	github.com/Bugs5382/go-grpc-actor v1.0.0
 	github.com/Bugs5382/go-log v1.3.0
 	github.com/Bugs5382/go-objectstore v1.0.0
