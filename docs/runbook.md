@@ -18,6 +18,8 @@ is reused for 5 seconds.
 | `rabbitmq` | yes | Not ready: writes can't be audited. |
 | `valkey` | no, reported when `REDIS_ADDR` is set | Degraded, still ready: reads go to Postgres. If Valkey was unreachable at start-up, the cache stays off and reports degraded until a restart. |
 | `objectstore` | no, reported when `S3_ENDPOINT` is set | Degraded, still ready: only editor images fail. |
+| `jwks` | yes, while service-to-service authentication is on | Not ready: no caller can be verified. A good fetch keeps it up for a minute; a failure is retried on the next probe. The verifier keeps its last good key set either way. |
+| `workloadauth` | no, reported only with `WORKLOAD_AUTH=disabled` | Always degraded: every caller that reaches the port is served. Never run like this outside local development. |
 
 - **HTTP on `PROBE_PORT` (8080):** `GET /livez` is 200 while the process is up and never checks a
   dependency. `GET /readyz` is 200 while ready and 503 while a required dependency is down; its JSON
@@ -37,7 +39,11 @@ is reused for 5 seconds.
 | `CATEGORY_NOT_DELETABLE` | The category or a subcategory still holds documents: move or delete them first. |
 | `INVALID_CATEGORY_RULE` | The rule named in the message has no subject, a subject where none belongs, or an unknown grant. |
 | The email-service key can't be read | `CORE_SETTINGS_KEY` changed since the key was saved. Restore the old key, or save the email-service key again. |
-| Act-as events name the target, not the admin | The gateway isn't a trusted caller: check mTLS and `CORE_TRUSTED_CALLERS`. |
+| Act-as events name the target, not the admin | The call didn't come from a caller with on-behalf access: check the gateway's token and that `steward/steward-gateway` is in `WORKLOAD_ALLOWED_SERVICEACCOUNTS`. |
+| `Unauthenticated: no workload token` | The caller sent no `authorization` metadata: check its `WORKLOAD_TOKEN_FILE` and the projected token mount (audience `steward`). |
+| `Unauthenticated: workload token rejected` | The log line `caller token rejected` gives the reason: wrong `iss` or `aud`, expired, or a service account missing from `WORKLOAD_ALLOWED_SERVICEACCOUNTS`. |
+| `PermissionDenied: caller not allowed on this method` | The caller is verified but core's allow-list doesn't list it for the method. The `rpc.denied` audit event names the caller and method. |
+| `Unavailable: workload verifier unavailable` | No JWKS has loaded since start: `steward-depstate-jwks`, then the `JWKS refresh failed` log line (CA file, bearer file, issuer URL). |
 | No events reach audit | `steward-depstate-rabbitmq` or `/readyz`, then the `audit` exchange and its binding to audit's queue. |
 
 ## Backups

@@ -14,6 +14,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -40,9 +41,14 @@ import (
 	"github.com/Steward-GRC/steward-core/internal/readiness"
 	"github.com/Steward-GRC/steward-core/internal/server"
 	"github.com/Steward-GRC/steward-core/internal/store"
+	"github.com/Steward-GRC/steward-core/internal/workloadauth"
 )
 
 const serviceName = "core"
+
+// jwksRecheck is how long a good JWKS fetch keeps readiness up before the
+// next probe fetches again.
+const jwksRecheck = time.Minute
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -154,8 +160,25 @@ func run(ctx context.Context, logger log.Logger) error {
 	if objects != nil {
 		assetH = grpcsvc.NewAssetHandler(store.NewAssetStore(db), objects, auditor)
 	}
-	if len(cfg.TrustedCallers) == 0 {
-		logger.Warn("CORE_TRUSTED_CALLERS is not set: forwarded actors are ignored, so act-as audit can't name the admin")
+	var auth *server.Auth
+	if cfg.WorkloadAuthEnabled {
+		v, err := workloadauth.NewVerifier(cfg.WorkloadAuth, logger)
+		if err != nil {
+			return fmt.Errorf("workload auth: %w", err)
+		}
+		go v.Run(ctx)
+		deps.JWKS = readiness.RecheckEvery(v.Refresh, jwksRecheck, time.Now)
+		auth = &server.Auth{Verifier: v, Policy: grpcsvc.CallerPolicy(), Options: []workloadauth.Option{
+			workloadauth.WithDenyHook(grpcsvc.AuditDenial(audit.New(publisher{auditPub}), logger)),
+		}}
+		logger.Info("service-to-service authentication on",
+			log.F("issuer", cfg.WorkloadAuth.Issuer), log.F("audience", cfg.WorkloadAuth.Audience),
+			log.F("jwks_override", cfg.WorkloadAuth.JWKSURL != ""), log.F("ca_file", cfg.WorkloadAuth.CAFile != ""),
+			log.F("bearer_file", cfg.WorkloadAuth.BearerFile != ""),
+			log.F("allowed_serviceaccounts", strings.Join(cfg.WorkloadAuth.AllowedServiceAccounts, ",")))
+	} else {
+		deps.WorkloadAuthDisabled = true
+		go workloadauth.WarnDisabled(ctx, logger, workloadauth.DisabledWarnInterval)
 	}
 
 	checker, err := readiness.New(deps, health.WithTTL(5*time.Second), health.WithTimeout(2*time.Second), health.WithLogger(logger))
@@ -181,7 +204,7 @@ func run(ctx context.Context, logger log.Logger) error {
 		cancel()
 	}()
 	opts := server.Options{
-		CertFile: cfg.TLS.CertFile, KeyFile: cfg.TLS.KeyFile, ClientCAFile: cfg.TLS.ClientCAFile, TrustedCallers: cfg.TrustedCallers,
+		CertFile: cfg.TLS.CertFile, KeyFile: cfg.TLS.KeyFile, ClientCAFile: cfg.TLS.ClientCAFile, Auth: auth,
 		Checker: checker,
 	}
 	err = server.Serve(ctx, lis, logger, opts, func(s *grpc.Server) {

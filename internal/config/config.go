@@ -9,8 +9,9 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
-	"strings"
 	"time"
+
+	"github.com/Steward-GRC/steward-core/internal/workloadauth"
 )
 
 // SettingsKeySize is the length of the decoded CORE_SETTINGS_KEY.
@@ -55,9 +56,11 @@ type Config struct {
 
 	S3  S3
 	TLS TLS
-	// TrustedCallers are the SPIFFE IDs whose forwarded actor is believed.
-	// They need TLS with client certificates.
-	TrustedCallers []string
+	// WorkloadAuth verifies the callers' workload tokens. It is set when
+	// WorkloadAuthEnabled; WORKLOAD_AUTH=disabled is the only way to turn it
+	// off.
+	WorkloadAuth        workloadauth.Config
+	WorkloadAuthEnabled bool
 }
 
 // Load reads the settings through getenv (os.Getenv in production).
@@ -84,13 +87,12 @@ func Load(getenv func(string) string) (Config, error) {
 		TLS: TLS{CertFile: getenv("GRPC_TLS_CERT_FILE"), KeyFile: getenv("GRPC_TLS_KEY_FILE"), ClientCAFile: getenv("GRPC_TLS_CLIENT_CA_FILE")},
 	}
 	c.MigrateDSN = or("MIGRATE_DSN", c.DatabaseDSN)
-	for _, id := range strings.Split(getenv("CORE_TRUSTED_CALLERS"), ",") {
-		if id = strings.TrimSpace(id); id != "" {
-			c.TrustedCallers = append(c.TrustedCallers, id)
-		}
-	}
 
 	var errs []error
+	var err error
+	if c.WorkloadAuth, c.WorkloadAuthEnabled, err = workloadauth.ServerConfigFromEnv(getenv); err != nil {
+		errs = append(errs, err)
+	}
 	if c.DatabaseDSN == "" {
 		errs = append(errs, errors.New("DATABASE_DSN is required"))
 	}
@@ -118,9 +120,6 @@ func Load(getenv func(string) string) (Config, error) {
 	tlsSet := c.TLS.CertFile != "" || c.TLS.KeyFile != "" || c.TLS.ClientCAFile != ""
 	if tlsSet && (c.TLS.CertFile == "" || c.TLS.KeyFile == "" || c.TLS.ClientCAFile == "") {
 		errs = append(errs, errors.New("GRPC_TLS_CERT_FILE, GRPC_TLS_KEY_FILE and GRPC_TLS_CLIENT_CA_FILE are set together"))
-	}
-	if len(c.TrustedCallers) > 0 && !tlsSet {
-		errs = append(errs, errors.New("CORE_TRUSTED_CALLERS needs GRPC_TLS_* with client certificates"))
 	}
 	return c, errors.Join(errs...)
 }

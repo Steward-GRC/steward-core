@@ -126,3 +126,55 @@ func TestObjectStoreDownDegradesButStaysReady(t *testing.T) {
 	require.Equal(t, health.StateDegraded, dep(t, r, readiness.ObjectStore).State, "an optional dependency that is down reports degraded")
 	require.False(t, dep(t, r, readiness.ObjectStore).Required)
 }
+
+func TestJWKSDownMakesCoreNotReady(t *testing.T) {
+	var down atomic.Bool
+	c := checker(t, readiness.Deps{Postgres: &fakeDB{}, Broker: &fakeBroker{}, JWKS: func(context.Context) error {
+		if down.Load() {
+			return errors.New("connection refused")
+		}
+		return nil
+	}})
+	r := c.Report(context.Background())
+	require.True(t, r.Ready)
+	require.True(t, dep(t, r, readiness.JWKS).Required, "callers can't be verified without the issuer's keys")
+	down.Store(true)
+	time.Sleep(5 * time.Millisecond)
+	r = c.Report(context.Background())
+	require.False(t, r.Ready)
+	require.Equal(t, health.StateDown, dep(t, r, readiness.JWKS).State)
+}
+
+func TestWorkloadAuthDisabledDegradesButStaysReady(t *testing.T) {
+	r := checker(t, readiness.Deps{Postgres: &fakeDB{}, Broker: &fakeBroker{}, WorkloadAuthDisabled: true}).Report(context.Background())
+	require.True(t, r.Ready)
+	require.Equal(t, health.StateDegraded, r.Status)
+	d := dep(t, r, readiness.WorkloadAuth)
+	require.False(t, d.Required)
+	require.Equal(t, health.StateDegraded, d.State)
+	require.NotContains(t, names(r), readiness.JWKS)
+}
+
+func TestRecheckEveryKeepsASuccessAndRetriesAFailure(t *testing.T) {
+	now := time.Unix(1000, 0)
+	var calls atomic.Int32
+	var fail atomic.Bool
+	check := readiness.RecheckEvery(func(context.Context) error {
+		calls.Add(1)
+		if fail.Load() {
+			return errors.New("down")
+		}
+		return nil
+	}, time.Minute, func() time.Time { return now })
+	ctx := context.Background()
+	require.NoError(t, check(ctx))
+	require.NoError(t, check(ctx))
+	require.Equal(t, int32(1), calls.Load(), "a success is kept for the interval")
+	now = now.Add(time.Minute)
+	fail.Store(true)
+	require.Error(t, check(ctx))
+	require.Error(t, check(ctx))
+	require.Equal(t, int32(3), calls.Load(), "a failure is retried on the next check")
+	fail.Store(false)
+	require.NoError(t, check(ctx))
+}
