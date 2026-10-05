@@ -73,6 +73,7 @@ func TestCallerPolicyDelivery(t *testing.T) {
 	requireCallerMethods(t, CallerDelivery, map[string]workloadauth.Access{
 		corev1.PolicyService_GetPolicy_FullMethodName:        workloadauth.Self,
 		corev1.PolicyService_GetPolicyVersion_FullMethodName: workloadauth.Self,
+		corev1.PolicyService_DiffVersions_FullMethodName:     workloadauth.Self,
 		corev1.AppendixService_ListAppendices_FullMethodName: workloadauth.Self,
 	})
 }

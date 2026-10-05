@@ -37,6 +37,7 @@ var (
 	deliveryMethods = []string{
 		corev1.PolicyService_GetPolicy_FullMethodName,
 		corev1.PolicyService_GetPolicyVersion_FullMethodName,
+		corev1.PolicyService_DiffVersions_FullMethodName,
 		corev1.AppendixService_ListAppendices_FullMethodName,
 	}
 	workflowMethods = []string{

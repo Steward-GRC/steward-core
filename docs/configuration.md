@@ -47,7 +47,7 @@ in core's allow-list (`internal/grpcsvc/callers.go`):
 | Caller | Methods | Access |
 | --- | --- | --- |
 | `gateway` | every method except `EmailServiceSecretService/GetEmailServiceSecret` | on behalf of the signed-in user |
-| `delivery` | `PolicyService/GetPolicy`, `GetPolicyVersion`; `AppendixService/ListAppendices` | as itself |
+| `delivery` | `PolicyService/GetPolicy`, `GetPolicyVersion`, `DiffVersions`; `AppendixService/ListAppendices` | as itself |
 | `workflow` | `CategoryService/GetCategory`; `PolicyService/GetPolicy`, `GetPolicyVersion`, `SetVersionStatus` | as itself |
 | `obligations` | `CategoryService/GetCategory`, `GetCategoryRuleset`; `PolicyService/GetPolicy`, `GetPolicyVersion`, `ListPolicyVersions`, `ListObligatingPolicies`, `ResolvePolicyObligation`; `EmailServiceSecretService/GetEmailServiceSecret` | as itself |
 | `collab` | `CategoryService/GetCategory`, `PolicyService/GetPolicy` as itself; `PolicyService/UpdateDraftContent` on behalf of the editing user | |
