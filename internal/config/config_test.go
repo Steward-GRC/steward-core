@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/Steward-GRC/steward-core/internal/workloadauth"
 )
 
 func env(m map[string]string) func(string) string {
@@ -21,7 +23,10 @@ const dsn = "postgres://core@db.example.org/core"
 var settingsKey = base64.StdEncoding.EncodeToString([]byte("0123456789abcdef0123456789abcdef"))
 
 func base() map[string]string {
-	return map[string]string{"DATABASE_DSN": dsn, "RABBITMQ_URL": "amqp://mq.example.org", "CORE_SETTINGS_KEY": settingsKey}
+	return map[string]string{
+		"DATABASE_DSN": dsn, "RABBITMQ_URL": "amqp://mq.example.org", "CORE_SETTINGS_KEY": settingsKey,
+		"WORKLOAD_OIDC_ISSUER": "https://issuer.example.org", "WORKLOAD_ALLOWED_SERVICEACCOUNTS": "steward/steward-gateway",
+	}
 }
 
 func TestLoadDefaults(t *testing.T) {
@@ -38,7 +43,8 @@ func TestLoadDefaults(t *testing.T) {
 	require.Empty(t, c.S3.Endpoint, "editor images are off unless configured")
 	require.Equal(t, "us-east-1", c.S3.Region)
 	require.True(t, c.S3.PathStyle)
-	require.Empty(t, c.TrustedCallers, "no caller is trusted to forward an actor by default")
+	require.True(t, c.WorkloadAuthEnabled)
+	require.Equal(t, "steward", c.WorkloadAuth.Audience)
 }
 
 func TestLoadReadsEverySetting(t *testing.T) {
@@ -50,7 +56,9 @@ func TestLoadReadsEverySetting(t *testing.T) {
 		"S3_ENDPOINT": "http://objects.example.org:9000", "S3_BUCKET": "steward", "S3_REGION": "eu-west-1",
 		"S3_ACCESS_KEY": "ak", "S3_SECRET_KEY": "sk", "S3_FORCE_PATH_STYLE": "false",
 		"GRPC_TLS_CERT_FILE": "/tls/tls.crt", "GRPC_TLS_KEY_FILE": "/tls/tls.key", "GRPC_TLS_CLIENT_CA_FILE": "/tls/ca.crt",
-		"CORE_TRUSTED_CALLERS": "spiffe://example.org/ns/steward/sa/gateway, spiffe://example.org/ns/steward/sa/workflow",
+		"WORKLOAD_OIDC_JWKS_URL": "https://issuer.example.org/openid/v1/jwks", "WORKLOAD_OIDC_CA_FILE": "/oidc/ca.crt",
+		"WORKLOAD_OIDC_BEARER_FILE": "/oidc/token", "WORKLOAD_AUDIENCE": "steward",
+		"WORKLOAD_ALLOWED_SERVICEACCOUNTS": "steward/steward-gateway, steward/steward-delivery",
 	} {
 		m[k] = v
 	}
@@ -65,7 +73,26 @@ func TestLoadReadsEverySetting(t *testing.T) {
 	require.Equal(t, time.Minute, c.CacheTTL)
 	require.Equal(t, S3{Endpoint: "http://objects.example.org:9000", Bucket: "steward", Region: "eu-west-1", AccessKey: "ak", SecretKey: "sk"}, c.S3)
 	require.Equal(t, TLS{CertFile: "/tls/tls.crt", KeyFile: "/tls/tls.key", ClientCAFile: "/tls/ca.crt"}, c.TLS)
-	require.Equal(t, []string{"spiffe://example.org/ns/steward/sa/gateway", "spiffe://example.org/ns/steward/sa/workflow"}, c.TrustedCallers)
+	require.Equal(t, workloadauth.Config{
+		Issuer: "https://issuer.example.org", JWKSURL: "https://issuer.example.org/openid/v1/jwks", CAFile: "/oidc/ca.crt",
+		BearerFile: "/oidc/token", Audience: "steward", AllowedServiceAccounts: []string{"steward/steward-gateway", "steward/steward-delivery"},
+	}, c.WorkloadAuth)
+}
+
+func TestLoadFailsClosedWithoutWorkloadAuth(t *testing.T) {
+	m := base()
+	delete(m, "WORKLOAD_OIDC_ISSUER")
+	_, err := Load(env(m))
+	require.ErrorIs(t, err, workloadauth.ErrNotConfigured, "no issuer and no explicit off switch stops the boot")
+}
+
+func TestLoadTurnsWorkloadAuthOffOnlyWhenDisabled(t *testing.T) {
+	m := base()
+	delete(m, "WORKLOAD_OIDC_ISSUER")
+	m["WORKLOAD_AUTH"] = "disabled"
+	c, err := Load(env(m))
+	require.NoError(t, err)
+	require.False(t, c.WorkloadAuthEnabled)
 }
 
 // A bad value stops the boot instead of quietly falling back to a default.
@@ -81,7 +108,9 @@ func TestLoadRejectsBadSettings(t *testing.T) {
 		"bad path style":         {"S3_FORCE_PATH_STYLE", "maybe"},
 		"bucket without host":    {"S3_BUCKET", "steward"},
 		"half tls":               {"GRPC_TLS_CERT_FILE", "/tls/tls.crt"},
-		"trust without tls":      {"CORE_TRUSTED_CALLERS", "spiffe://example.org/ns/steward/sa/gateway"},
+		"auth mode typo":         {"WORKLOAD_AUTH", "off"},
+		"plain http issuer":      {"WORKLOAD_OIDC_ISSUER", "http://issuer.example.org"},
+		"bad allow-list entry":   {"WORKLOAD_ALLOWED_SERVICEACCOUNTS", "steward-gateway"},
 	} {
 		m := base()
 		m[kv[0]] = kv[1]

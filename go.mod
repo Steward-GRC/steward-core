@@ -16,6 +16,7 @@ require (
 	github.com/Bugs5382/go-redis v1.2.0
 	github.com/Steward-GRC/steward-authz v0.0.0-20261004225933-2e7c82d1efea
 	github.com/alicebob/miniredis/v2 v2.38.0
+	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/stretchr/testify v1.11.1
