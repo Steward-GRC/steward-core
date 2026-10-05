@@ -16,8 +16,11 @@ stubs committed in `gen/go`. Access to every RPC is enforced at the gateway; cor
 | `EmailServiceSecretService` | Internal only: the email-service configuration with its key, for the service that sends mail. The gateway never serves it. |
 | `AssetService` | Editor images. |
 
-The server also serves `grpc.health.v1` (liveness on the empty service name, readiness on
-`readiness`, which fails while Postgres or RabbitMQ is down) and reflection.
+The server also serves `grpc.health.v1` and reflection. On `grpc.health.v1`, `liveness` reports the
+process only, and the empty name and `readiness` fail while Postgres or RabbitMQ is down. Every
+`Health/Check` answer carries the `steward-version`, `steward-commit`, `steward-dep-<name>` and
+`steward-depstate-<name>` headers. `/livez` and `/readyz` serve the same over HTTP on
+`PROBE_PORT`; see the [runbook](runbook.md#probes).
 
 ## Events out
 

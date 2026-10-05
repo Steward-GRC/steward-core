@@ -12,6 +12,7 @@ value that doesn't parse stops the service with every problem listed; nothing fa
 | `RABBITMQ_URL` | required | The broker lifecycle and audit events are published to. |
 | `CORE_SETTINGS_KEY` | required | 32 random bytes, base64. Encrypts the secrets core stores (the email-service key). |
 | `GRPC_PORT` | `9090` | The gRPC listen port. |
+| `PROBE_PORT` | `8080` | Plain HTTP for `/livez` and `/readyz`. |
 | `GRPC_TLS_CERT_FILE`, `GRPC_TLS_KEY_FILE`, `GRPC_TLS_CLIENT_CA_FILE` | empty | Serve mTLS: the server certificate and key, and the CA client certificates must chain to. All three or none. |
 | `CORE_TRUSTED_CALLERS` | empty | Comma-separated SPIFFE IDs whose forwarded actor (go-grpc-actor) is believed. Needs mTLS. Empty ignores every forwarded actor. |
 | `REDIS_ADDR`, `REDIS_PASSWORD` | empty | The read cache (Redis or Valkey). Off when `REDIS_ADDR` is empty. |

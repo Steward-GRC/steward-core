@@ -17,6 +17,8 @@ import (
 	"syscall"
 	"time"
 
+	buildinfo "github.com/Bugs5382/go-buildinfo"
+	"github.com/Bugs5382/go-buildinfo/health"
 	log "github.com/Bugs5382/go-log"
 	objectstore "github.com/Bugs5382/go-objectstore"
 	"github.com/Bugs5382/go-objectstore/s3store"
@@ -35,18 +37,12 @@ import (
 	"github.com/Steward-GRC/steward-core/internal/domain"
 	"github.com/Steward-GRC/steward-core/internal/grpcsvc"
 	"github.com/Steward-GRC/steward-core/internal/lifecycle"
+	"github.com/Steward-GRC/steward-core/internal/readiness"
 	"github.com/Steward-GRC/steward-core/internal/server"
 	"github.com/Steward-GRC/steward-core/internal/store"
 )
 
 const serviceName = "core"
-
-// Set with -ldflags -X at build time.
-var (
-	version   = "dev"
-	commit    = "none"
-	buildDate = "unknown"
-)
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -58,7 +54,8 @@ func main() {
 }
 
 func run(ctx context.Context, logger log.Logger) error {
-	logger.Info("starting", log.F("version", version), log.F("commit", commit), log.F("build_date", buildDate))
+	bi := buildinfo.Get()
+	logger.Info("starting", log.F("version", bi.Version), log.F("commit", bi.Commit), log.F("go_version", bi.GoVersion))
 	cfg, err := config.Load(os.Getenv)
 	if err != nil {
 		return fmt.Errorf("config: %w", err)
@@ -114,12 +111,18 @@ func run(ctx context.Context, logger log.Logger) error {
 	policyH := grpcsvc.NewPolicyHandler(policies, categories, templates, domain.NoopValidator{}, auditor).
 		WithLifecycleEmitter(lifecycleEmitter).WithAppendixCopier(appendices)
 	settingsH := grpcsvc.NewSettingsHandler(store.NewSettingsStore(db), auditor).WithEmailServiceStore(emailService)
+	deps := readiness.Deps{Postgres: readiness.PostgresDB(db), Broker: conn}
 	if cfg.RedisAddr != "" {
 		rc, err := redis.Connect(ctx, redis.WithAddr(cfg.RedisAddr), redis.WithPassword(cfg.RedisPassword),
 			redis.WithTimeouts(300*time.Millisecond, 200*time.Millisecond, 200*time.Millisecond))
 		if err != nil {
 			logger.Warn("redis unreachable: the read cache is off", log.F("error", err.Error()))
+			// The cache is only wired at boot, so it stays off until a restart;
+			// readiness reports it degraded for that long.
+			bootErr := err
+			deps.Cache = func(context.Context) error { return bootErr }
 		} else {
+			deps.Cache = func(ctx context.Context) error { return rc.Redis().Ping(ctx).Err() }
 			defer func() { _ = rc.Close() }()
 			c := cache.New(rc, cfg.CacheTTL)
 			policyH = policyH.WithVersionCache(c)
@@ -142,6 +145,7 @@ func run(ctx context.Context, logger log.Logger) error {
 			return fmt.Errorf("object store: %w", err)
 		}
 		objects = s3
+		deps.Objects = s3
 		logger.Info("editor images on", log.F("bucket", cfg.S3.Bucket))
 	} else {
 		logger.Info("S3_ENDPOINT is not set: editor images are off")
@@ -154,24 +158,33 @@ func run(ctx context.Context, logger log.Logger) error {
 		logger.Warn("CORE_TRUSTED_CALLERS is not set: forwarded actors are ignored, so act-as audit can't name the admin")
 	}
 
+	checker, err := readiness.New(deps, health.WithTTL(5*time.Second), health.WithTimeout(2*time.Second), health.WithLogger(logger))
+	if err != nil {
+		return fmt.Errorf("readiness: %w", err)
+	}
+
 	var lc net.ListenConfig
 	lis, err := lc.Listen(ctx, "tcp", ":"+cfg.GRPCPort)
 	if err != nil {
 		return fmt.Errorf("listen: %w", err)
 	}
-	logger.Info("serving", log.F("port", cfg.GRPCPort))
+	probeLis, err := lc.Listen(ctx, "tcp", ":"+cfg.ProbePort)
+	if err != nil {
+		return fmt.Errorf("listen: %w", err)
+	}
+	logger.Info("serving", log.F("port", cfg.GRPCPort), log.F("probe_port", cfg.ProbePort))
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	probesDone := make(chan error, 1)
+	go func() {
+		probesDone <- server.ServeProbes(ctx, probeLis, checker)
+		cancel()
+	}()
 	opts := server.Options{
 		CertFile: cfg.TLS.CertFile, KeyFile: cfg.TLS.KeyFile, ClientCAFile: cfg.TLS.ClientCAFile, TrustedCallers: cfg.TrustedCallers,
-		// Postgres and RabbitMQ are required; Redis and object storage are not,
-		// so they never fail readiness.
-		Readiness: []server.Check{db.Ping, func(context.Context) error {
-			if !conn.Healthy() {
-				return errBrokerDown
-			}
-			return nil
-		}},
+		Checker: checker,
 	}
-	return server.Serve(ctx, lis, logger, opts, func(s *grpc.Server) {
+	err = server.Serve(ctx, lis, logger, opts, func(s *grpc.Server) {
 		corev1.RegisterCategoryServiceServer(s, grpcsvc.NewCategoryHandler(categories, auditor).WithObligationEmitter(lifecycleEmitter, policies))
 		corev1.RegisterTemplateServiceServer(s, grpcsvc.NewTemplateHandler(templates, auditor))
 		corev1.RegisterPolicyServiceServer(s, policyH)
@@ -186,9 +199,9 @@ func run(ctx context.Context, logger log.Logger) error {
 		corev1.RegisterEmailServiceSecretServiceServer(s, grpcsvc.NewEmailServiceSecretHandler(emailService))
 		corev1.RegisterAssetServiceServer(s, assetH)
 	})
+	cancel()
+	return errors.Join(err, <-probesDone)
 }
-
-var errBrokerDown = errors.New("rabbitmq connection is down")
 
 // publisher narrows a go-rabbitmq publisher to the Publish the emitters use.
 type publisher struct{ p *rabbitmq.Publisher }

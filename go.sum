@@ -8,6 +8,8 @@ github.com/Bugs5382/go-apperr v1.2.1 h1:+IFP+LQWu4BTPDX2ezkjEhfvn5HTvBHirL2b77EX
 github.com/Bugs5382/go-apperr v1.2.1/go.mod h1:IX+TmCj35CSUNK/JU16pPTn4L4qpDreVOc7i4Q3dxy4=
 github.com/Bugs5382/go-authz v1.0.0 h1:I8BRm53nJX2GGc2+A/eNaIOrYwp7YYYXMFHOmP+fEhM=
 github.com/Bugs5382/go-authz v1.0.0/go.mod h1:H0c0JA7yIZ+4jcf8hXUB1GkASJ7sf5OuhwBxBqV/Asc=
+github.com/Bugs5382/go-buildinfo v1.0.0 h1:oxFnQOlYxH9MtCsDALz3AP4eEKW8uFMTJVKSD8pa6qA=
+github.com/Bugs5382/go-buildinfo v1.0.0/go.mod h1:5WxMB/NqiSjXGv23QQWNSySwpT5HldJ2iL8NQ/MkVbc=
 github.com/Bugs5382/go-grpc-actor v1.0.0 h1:PViLikqce2DlHlf4iHzxvUwvXupP8hQk1xXqYiUrScE=
 github.com/Bugs5382/go-grpc-actor v1.0.0/go.mod h1:m27opyrbIDUYHP+yPFoW+aFLxoXxQxQYrlgApQ9bw4w=
 github.com/Bugs5382/go-log v1.3.0 h1:lJv2iv6yL9l1Eqii62ArcJ1eoKbpLFdrY7L9gPNSqcI=

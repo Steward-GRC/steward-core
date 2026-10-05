@@ -28,6 +28,7 @@ func TestLoadDefaults(t *testing.T) {
 	c, err := Load(env(base()))
 	require.NoError(t, err)
 	require.Equal(t, "9090", c.GRPCPort)
+	require.Equal(t, "8080", c.ProbePort)
 	require.Equal(t, "localhost:4317", c.OTLPEndpoint)
 	require.Equal(t, "migrations", c.MigrationsDir)
 	require.Equal(t, dsn, c.MigrateDSN)
@@ -43,7 +44,7 @@ func TestLoadDefaults(t *testing.T) {
 func TestLoadReadsEverySetting(t *testing.T) {
 	m := base()
 	for k, v := range map[string]string{
-		"MIGRATE_DSN": "postgres://migrate@db.example.org/core", "MIGRATIONS_DIR": "/migrations", "GRPC_PORT": "9443",
+		"MIGRATE_DSN": "postgres://migrate@db.example.org/core", "MIGRATIONS_DIR": "/migrations", "GRPC_PORT": "9443", "PROBE_PORT": "8081",
 		"OTEL_EXPORTER_OTLP_ENDPOINT": "otel.example.org:4317",
 		"REDIS_ADDR":                  "cache.example.org:6379", "REDIS_PASSWORD": "pw", "CACHE_TTL": "1m",
 		"S3_ENDPOINT": "http://objects.example.org:9000", "S3_BUCKET": "steward", "S3_REGION": "eu-west-1",
@@ -58,6 +59,7 @@ func TestLoadReadsEverySetting(t *testing.T) {
 	require.Equal(t, "postgres://migrate@db.example.org/core", c.MigrateDSN)
 	require.Equal(t, "/migrations", c.MigrationsDir)
 	require.Equal(t, "9443", c.GRPCPort)
+	require.Equal(t, "8081", c.ProbePort)
 	require.Equal(t, "cache.example.org:6379", c.RedisAddr)
 	require.Equal(t, "pw", c.RedisPassword)
 	require.Equal(t, time.Minute, c.CacheTTL)

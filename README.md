@@ -27,7 +27,9 @@ task run
 ```
 
 Or build the image with `docker build --build-arg VERSION=dev --build-arg COMMIT=$(git rev-parse HEAD) -t steward-core .`.
-Settings are in [configuration](docs/configuration.md).
+Settings are in [configuration](docs/configuration.md). The version and commit show up in the
+`steward-version` and `steward-commit` health headers and on `/readyz`; the probes are in the
+[runbook](docs/runbook.md#probes).
 
 ## 📚 Docs
 
