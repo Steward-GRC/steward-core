@@ -74,6 +74,11 @@ type Policy struct {
 	RetiredAt *time.Time
 	CreatedAt time.Time
 	UpdatedAt time.Time
+	// CurrentVersionNo/CurrentVersionStatus describe whichever version is
+	// current: CurrentPublishedVersionID if set, else CurrentDraftVersionID.
+	// Zero/empty when the policy has neither (never saved a draft).
+	CurrentVersionNo     int
+	CurrentVersionStatus PolicyVersionStatus
 }
 
 func NewPolicy(title string, homeCategoryID uuid.UUID, sensitivity Sensitivity, ownerUserID uuid.UUID) (Policy, error) {

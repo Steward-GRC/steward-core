@@ -36,6 +36,7 @@ func storeUnavailable(ctx context.Context, op string, cause error) error {
 type PolicyStorer interface {
 	CreatePolicy(ctx context.Context, p domain.Policy) (domain.Policy, error)
 	GetPolicy(ctx context.Context, id uuid.UUID) (domain.Policy, error)
+	GetPolicyByNumber(ctx context.Context, number string) (domain.Policy, error)
 	ListPolicies(ctx context.Context, categoryID uuid.UUID, includeDescendants bool, docType domain.DocumentType) ([]domain.Policy, error)
 	GetPolicyVersion(ctx context.Context, id uuid.UUID) (domain.PolicyVersion, error)
 	ListPublishedVersions(ctx context.Context, policyID uuid.UUID) ([]domain.PolicyVersion, error)
@@ -194,6 +195,13 @@ func policyToProto(p domain.Policy) *corev1.Policy {
 	if p.RetiredAt != nil {
 		proto.RetiredAt = p.RetiredAt.UTC().Format(time.RFC3339)
 	}
+	if !p.UpdatedAt.IsZero() {
+		proto.UpdatedAt = timestamppb.New(p.UpdatedAt)
+	}
+	if p.CurrentVersionStatus != "" {
+		proto.CurrentVersionNo = toInt32(p.CurrentVersionNo)
+		proto.CurrentVersionStatus = policyVersionStatusToProto(p.CurrentVersionStatus)
+	}
 	return proto
 }
 
@@ -208,6 +216,9 @@ func policyVersionToProto(pv domain.PolicyVersion) *corev1.PolicyVersion {
 	}
 	if !pv.CreatedAt.IsZero() {
 		proto.CreatedAt = timestamppb.New(pv.CreatedAt)
+	}
+	if !pv.PublishedAt.IsZero() {
+		proto.PublishedAt = timestamppb.New(pv.PublishedAt)
 	}
 	return proto
 }
@@ -284,6 +295,24 @@ func (h *PolicyHandler) GetPolicy(ctx context.Context, req *corev1.GetPolicyRequ
 	// leaves it false.
 	proto.TemplateUpdateAvailable = h.templateUpdateAvailable(ctx, p)
 	return &corev1.GetPolicyResponse{Policy: proto}, nil
+}
+
+// GetPolicyByNumber handles PolicyService.GetPolicyByNumber: the same read as GetPolicy, keyed by
+// the rendered number instead of the id.
+func (h *PolicyHandler) GetPolicyByNumber(ctx context.Context, req *corev1.GetPolicyByNumberRequest) (*corev1.GetPolicyByNumberResponse, error) {
+	if req.GetNumber() == "" {
+		return nil, status.Error(codes.InvalidArgument, "number required")
+	}
+	p, err := h.store.GetPolicyByNumber(ctx, req.GetNumber())
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, status.Error(codes.NotFound, "policy not found")
+		}
+		return nil, storeUnavailable(ctx, "get_policy_by_number", err)
+	}
+	proto := policyToProto(p)
+	proto.TemplateUpdateAvailable = h.templateUpdateAvailable(ctx, p)
+	return &corev1.GetPolicyByNumberResponse{Policy: proto}, nil
 }
 
 // templateUpdateAvailable reports whether the effective template has a newer published version than

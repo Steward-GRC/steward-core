@@ -110,6 +110,15 @@ func (f *fakePolicyStore) GetPolicy(_ context.Context, id uuid.UUID) (domain.Pol
 	return p, nil
 }
 
+func (f *fakePolicyStore) GetPolicyByNumber(_ context.Context, number string) (domain.Policy, error) {
+	for _, p := range f.policies {
+		if p.Number == number {
+			return p, nil
+		}
+	}
+	return domain.Policy{}, fmt.Errorf("not found")
+}
+
 func (f *fakePolicyStore) ListPolicies(_ context.Context, categoryID uuid.UUID, includeDescendants bool, docType domain.DocumentType) ([]domain.Policy, error) {
 	var out []domain.Policy
 	for _, p := range f.policies {
