@@ -1567,3 +1567,130 @@ func TestPolicyStoreSetProposedTitleDraftSucceeds(t *testing.T) {
 		t.Fatalf("proposed_title: got %v want %q", pv.ProposedTitle, "Renamed")
 	}
 }
+
+// GetPolicyByNumber looks a policy up by its rendered number, parsed back
+// into the category code and sequence it encodes.
+func TestPolicyStoreGetPolicyByNumber(t *testing.T) {
+	pool := newTestDB(t)
+	gs := store.NewCategoryStore(pool)
+	ts := store.NewTemplateStore(pool)
+	ps := store.NewPolicyStore(pool)
+	ctx := context.Background()
+	g, _ := setupCategoryAndTemplate(t, gs, ts)
+	code := store.PolicyNumberCode(g.Slug)
+
+	p, err := domain.NewPolicy("IT Security Policy", g.ID, domain.SensitivityStandard, uuid.New())
+	if err != nil {
+		t.Fatalf("NewPolicy: %v", err)
+	}
+	p.DocumentType = domain.DocumentTypeProcedure
+	created, err := ps.CreatePolicy(ctx, p)
+	if err != nil {
+		t.Fatalf("CreatePolicy: %v", err)
+	}
+	wantNumber := "PRC-" + code + "-000001"
+	if created.Number != wantNumber {
+		t.Fatalf("expected %q, got %q", wantNumber, created.Number)
+	}
+
+	got, err := ps.GetPolicyByNumber(ctx, wantNumber)
+	if err != nil {
+		t.Fatalf("GetPolicyByNumber(%q): %v", wantNumber, err)
+	}
+	if got.ID != created.ID {
+		t.Fatalf("expected id %s, got %s", created.ID, got.ID)
+	}
+	if got.Number != wantNumber {
+		t.Fatalf("expected number %q, got %q", wantNumber, got.Number)
+	}
+}
+
+// A number that doesn't parse, or doesn't match any policy, is pgx.ErrNoRows
+// — the same miss GetPolicy reports for an unknown id.
+func TestPolicyStoreGetPolicyByNumberNotFound(t *testing.T) {
+	pool := newTestDB(t)
+	ps := store.NewPolicyStore(pool)
+	ctx := context.Background()
+
+	cases := []string{
+		"not-a-number",
+		"POL-NOSUCHCODE-000001",
+		"POL-GEN-999999",
+	}
+	for _, number := range cases {
+		if _, err := ps.GetPolicyByNumber(ctx, number); !errors.Is(err, pgx.ErrNoRows) {
+			t.Fatalf("GetPolicyByNumber(%q): expected pgx.ErrNoRows, got %v", number, err)
+		}
+	}
+}
+
+// GetPolicy and ListPolicies both expose the policy's updated_at and the
+// version number/status of whichever version is current (published if set,
+// else the draft), so a list row never needs a second call to show them.
+func TestPolicyStoreCurrentVersionAndTimestampsOnReads(t *testing.T) {
+	pool := newTestDB(t)
+	gs := store.NewCategoryStore(pool)
+	ts := store.NewTemplateStore(pool)
+	ps := store.NewPolicyStore(pool)
+	ctx := context.Background()
+	g, tv := setupCategoryAndTemplate(t, gs, ts)
+
+	p, _ := domain.NewPolicy("Timestamped Policy", g.ID, domain.SensitivityStandard, uuid.New())
+	created, err := ps.CreatePolicy(ctx, p)
+	if err != nil {
+		t.Fatalf("CreatePolicy: %v", err)
+	}
+
+	// CreatePolicy seeds an initial draft: the current version is that draft.
+	// Its version_no is still 0 — unassigned until publish, same as
+	// TestPolicyStoreCreateSeedsInitialDraft checks directly on the row.
+	got, err := ps.GetPolicy(ctx, created.ID)
+	if err != nil {
+		t.Fatalf("GetPolicy: %v", err)
+	}
+	if got.UpdatedAt.IsZero() {
+		t.Fatal("expected a non-zero UpdatedAt")
+	}
+	if got.CurrentVersionNo != 0 || got.CurrentVersionStatus != domain.PolicyVersionStatusDraft {
+		t.Fatalf("expected current version 0/draft, got %d/%s", got.CurrentVersionNo, got.CurrentVersionStatus)
+	}
+
+	list, err := ps.ListPolicies(ctx, g.ID, false, domain.DocumentTypePolicy)
+	if err != nil {
+		t.Fatalf("ListPolicies: %v", err)
+	}
+	if len(list) != 1 {
+		t.Fatalf("expected 1 policy, got %d", len(list))
+	}
+	if list[0].UpdatedAt.IsZero() {
+		t.Fatal("expected a non-zero UpdatedAt in ListPolicies")
+	}
+	if list[0].CurrentVersionNo != 0 || list[0].CurrentVersionStatus != domain.PolicyVersionStatusDraft {
+		t.Fatalf("expected current version 0/draft in ListPolicies, got %d/%s", list[0].CurrentVersionNo, list[0].CurrentVersionStatus)
+	}
+
+	// Publishing moves the current version to the published one, still #1.
+	// The seeded draft is freeform; pin it to the published template version
+	// first, same as TestPolicyStorePublishAssignsNumberAndIncrementsSequence.
+	draft, err := domain.NewPolicyVersionDraft(created.ID, tv.ID, uuid.New(), `{"sections":{}}`)
+	if err != nil {
+		t.Fatalf("NewPolicyVersionDraft: %v", err)
+	}
+	if _, _, err := ps.UpsertDraft(ctx, draft); err != nil {
+		t.Fatalf("UpsertDraft: %v", err)
+	}
+	if _, err := ps.PublishDraft(ctx, created.ID, uuid.New()); err != nil {
+		t.Fatalf("PublishDraft: %v", err)
+	}
+
+	got2, err := ps.GetPolicy(ctx, created.ID)
+	if err != nil {
+		t.Fatalf("GetPolicy after publish: %v", err)
+	}
+	if got2.CurrentVersionNo != 1 || got2.CurrentVersionStatus != domain.PolicyVersionStatusPublished {
+		t.Fatalf("expected current version 1/published after publish, got %d/%s", got2.CurrentVersionNo, got2.CurrentVersionStatus)
+	}
+	if !got2.UpdatedAt.After(got.UpdatedAt) && !got2.UpdatedAt.Equal(got.UpdatedAt) {
+		t.Fatalf("expected UpdatedAt to not go backwards: before=%v after=%v", got.UpdatedAt, got2.UpdatedAt)
+	}
+}

@@ -64,6 +64,15 @@ message Policy {
   string retired_at = 17;
   // Set at creation and read-only after it.
   DocumentType document_type = 18;
+  // Set on every write to the policy row itself (not its versions).
+  google.protobuf.Timestamp updated_at = 19;
+  // The version number of current_published_version_id, or else
+  // current_draft_version_id; 0 both when the policy has neither, and for an
+  // unpublished draft, which isn't numbered until it's promoted on publish.
+  int32 current_version_no = 20;
+  // The status of that same version; UNSPECIFIED when the policy has
+  // neither a published version nor a draft.
+  PolicyVersionStatus current_version_status = 21;
 }
 
 message PolicyVersion {
@@ -111,6 +120,17 @@ message GetPolicyRequest {
 }
 
 message GetPolicyResponse {
+  Policy policy = 1;
+}
+
+// GetPolicyByNumberRequest looks a policy or procedure up by its rendered
+// number (e.g. "POL-SAFETY-000007"), which is unique by construction: the
+// category code segment is unique and the sequence is unique within it.
+message GetPolicyByNumberRequest {
+  string number = 1;
+}
+
+message GetPolicyByNumberResponse {
   Policy policy = 1;
 }
 
@@ -422,6 +442,7 @@ message ReindexAllPublishedResponse {
 service PolicyService {
   rpc CreatePolicy(CreatePolicyRequest) returns (CreatePolicyResponse);
   rpc GetPolicy(GetPolicyRequest) returns (GetPolicyResponse);
+  rpc GetPolicyByNumber(GetPolicyByNumberRequest) returns (GetPolicyByNumberResponse);
   rpc ListPolicies(ListPoliciesRequest) returns (ListPoliciesResponse);
   rpc GetPolicyVersion(GetPolicyVersionRequest) returns (GetPolicyVersionResponse);
   rpc ListPolicyVersions(ListPolicyVersionsRequest) returns (ListPolicyVersionsResponse);

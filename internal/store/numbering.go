@@ -20,6 +20,19 @@ func docNumberPrefix(docType domain.DocumentType) string {
 	return "POL"
 }
 
+// docTypeFromPrefix is the inverse of docNumberPrefix, for parsing a rendered
+// number back apart. ok is false for anything else.
+func docTypeFromPrefix(prefix string) (domain.DocumentType, bool) {
+	switch prefix {
+	case "POL":
+		return domain.DocumentTypePolicy, true
+	case "PRC":
+		return domain.DocumentTypeProcedure, true
+	default:
+		return "", false
+	}
+}
+
 // renderDocNumber formats <PREFIX>-<code>-<zero-padded sequence>. The number
 // is derived on every read from the category's current code, never stored, so
 // a code change reaches every document in the category.

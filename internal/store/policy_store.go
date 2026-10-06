@@ -7,6 +7,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	postgres "github.com/Bugs5382/go-postgres"
@@ -240,18 +242,20 @@ func (s *PolicyStore) SetHomeCategory(ctx context.Context, policyID, targetCateg
 // ack_triggers as nil (inherit from the category).
 func (s *PolicyStore) GetPolicy(ctx context.Context, id uuid.UUID) (domain.Policy, error) {
 	var (
-		p                   domain.Policy
-		sensitivity         string
-		docType             string
-		categoryCode        *string
-		categorySlug        string
-		templateID          *uuid.UUID
-		currentPubVID       *uuid.UUID
-		currentDraftVID     *uuid.UUID
-		ackTriggersRaw      *string
-		ackAudienceOverride pgtype.FlatArray[uuid.UUID]
-		effectiveDate       pgtype.Date
-		retiredAt           *time.Time
+		p                    domain.Policy
+		sensitivity          string
+		docType              string
+		categoryCode         *string
+		categorySlug         string
+		templateID           *uuid.UUID
+		currentPubVID        *uuid.UUID
+		currentDraftVID      *uuid.UUID
+		ackTriggersRaw       *string
+		ackAudienceOverride  pgtype.FlatArray[uuid.UUID]
+		effectiveDate        pgtype.Date
+		retiredAt            *time.Time
+		currentVersionNo     *int
+		currentVersionStatus *string
 	)
 	err := s.db.Querier().QueryRow(ctx,
 		`SELECT p.id, p.home_category_id, p.sequence, p.document_type, g.code, g.slug, p.title, p.sensitivity,
@@ -259,15 +263,18 @@ func (s *PolicyStore) GetPolicy(ctx context.Context, id uuid.UUID) (domain.Polic
 		        (SELECT id FROM policy_versions WHERE policy_id = p.id AND status = 'draft' LIMIT 1),
 		        p.owner_user_id,
 		        p.ack_triggers, p.ack_audience_override, p.effective_date,
-		        p.created_at, p.updated_at, p.retired_at
+		        p.created_at, p.updated_at, p.retired_at,
+		        cv.version_no, cv.status
 		   FROM policies p JOIN categories g ON g.id = p.home_category_id
+		   LEFT JOIN policy_versions cv ON cv.id = COALESCE(p.current_published_version_id, (SELECT id FROM policy_versions WHERE policy_id = p.id AND status = 'draft' LIMIT 1))
 		  WHERE p.id = $1`, id,
 	).Scan(&p.ID, &p.HomeCategoryID, &p.Sequence, &docType, &categoryCode, &categorySlug, &p.Title, &sensitivity,
 		&templateID, &p.TemplateNone, &currentPubVID,
 		&currentDraftVID,
 		&p.OwnerUserID,
 		&ackTriggersRaw, &ackAudienceOverride, &effectiveDate,
-		&p.CreatedAt, &p.UpdatedAt, &retiredAt)
+		&p.CreatedAt, &p.UpdatedAt, &retiredAt,
+		&currentVersionNo, &currentVersionStatus)
 	if err != nil {
 		return domain.Policy{}, fmt.Errorf("PolicyStore.GetPolicy: %w", err)
 	}
@@ -293,7 +300,42 @@ func (s *PolicyStore) GetPolicy(ctx context.Context, id uuid.UUID) (domain.Polic
 		p.AckTriggers = &v
 	}
 	p.AckAudienceOverride = []uuid.UUID(ackAudienceOverride)
+	if currentVersionNo != nil {
+		p.CurrentVersionNo = *currentVersionNo
+	}
+	if currentVersionStatus != nil {
+		p.CurrentVersionStatus = domain.PolicyVersionStatus(*currentVersionStatus)
+	}
 	return p, nil
+}
+
+// GetPolicyByNumber fetches a policy by its rendered number (e.g.
+// "POL-SAFETY-000007"): <PREFIX>-<category code>-<sequence>, parsed back into
+// its category code and sequence. The code segment never contains "-" (it's
+// built from uppercase alphanumerics only), so the split is unambiguous.
+// Returns pgx.ErrNoRows when the number doesn't parse or match.
+func (s *PolicyStore) GetPolicyByNumber(ctx context.Context, number string) (domain.Policy, error) {
+	parts := strings.SplitN(number, "-", 3)
+	if len(parts) != 3 {
+		return domain.Policy{}, pgx.ErrNoRows
+	}
+	docType, ok := docTypeFromPrefix(parts[0])
+	if !ok {
+		return domain.Policy{}, pgx.ErrNoRows
+	}
+	sequence, err := strconv.Atoi(parts[2])
+	if err != nil {
+		return domain.Policy{}, pgx.ErrNoRows
+	}
+	var id uuid.UUID
+	if err := s.db.Querier().QueryRow(ctx,
+		`SELECT p.id FROM policies p JOIN categories g ON g.id = p.home_category_id
+		  WHERE g.code = $1 AND p.sequence = $2 AND p.document_type = $3`,
+		parts[1], sequence, string(docType),
+	).Scan(&id); err != nil {
+		return domain.Policy{}, fmt.Errorf("PolicyStore.GetPolicyByNumber: %w", err)
+	}
+	return s.GetPolicy(ctx, id)
 }
 
 // RetirePolicy stamps retired_at. Retiring a retired policy is a no-op. A
@@ -326,9 +368,11 @@ func (s *PolicyStore) ListPolicies(ctx context.Context, categoryID uuid.UUID, in
 		                (SELECT pv.id FROM policy_versions pv WHERE pv.policy_id = p.id AND pv.status = 'draft' LIMIT 1),
 		                p.owner_user_id,
 		                p.ack_triggers, p.ack_audience_override,
-		                p.created_at, p.updated_at
+		                p.created_at, p.updated_at,
+		                cv.version_no, cv.status
 		           FROM policies p
 		           JOIN categories hg ON hg.id = p.home_category_id
+		           LEFT JOIN policy_versions cv ON cv.id = COALESCE(p.current_published_version_id, (SELECT id FROM policy_versions WHERE policy_id = p.id AND status = 'draft' LIMIT 1))
 		          WHERE p.home_category_id IN (SELECT id FROM grp)
 		            AND p.retired_at IS NULL
 		            AND p.document_type = $2`
@@ -338,9 +382,11 @@ func (s *PolicyStore) ListPolicies(ctx context.Context, categoryID uuid.UUID, in
 		                (SELECT pv.id FROM policy_versions pv WHERE pv.policy_id = p.id AND pv.status = 'draft' LIMIT 1),
 		                p.owner_user_id,
 		                p.ack_triggers, p.ack_audience_override,
-		                p.created_at, p.updated_at
+		                p.created_at, p.updated_at,
+		                cv.version_no, cv.status
 		           FROM policies p
 		           JOIN categories hg ON hg.id = p.home_category_id
+		           LEFT JOIN policy_versions cv ON cv.id = COALESCE(p.current_published_version_id, (SELECT id FROM policy_versions WHERE policy_id = p.id AND status = 'draft' LIMIT 1))
 		          WHERE p.home_category_id = $1
 		            AND p.retired_at IS NULL
 		            AND p.document_type = $2`
@@ -354,23 +400,26 @@ func (s *PolicyStore) ListPolicies(ctx context.Context, categoryID uuid.UUID, in
 	var out []domain.Policy
 	for rows.Next() {
 		var (
-			p                   domain.Policy
-			sensitivity         string
-			docType             string
-			categoryCode        *string
-			categorySlug        string
-			templateID          *uuid.UUID
-			currentPubVID       *uuid.UUID
-			currentDraftVID     *uuid.UUID
-			ackTriggersRaw      *string
-			ackAudienceOverride pgtype.FlatArray[uuid.UUID]
+			p                    domain.Policy
+			sensitivity          string
+			docType              string
+			categoryCode         *string
+			categorySlug         string
+			templateID           *uuid.UUID
+			currentPubVID        *uuid.UUID
+			currentDraftVID      *uuid.UUID
+			ackTriggersRaw       *string
+			ackAudienceOverride  pgtype.FlatArray[uuid.UUID]
+			currentVersionNo     *int
+			currentVersionStatus *string
 		)
 		if err := rows.Scan(&p.ID, &p.HomeCategoryID, &p.Sequence, &docType, &categoryCode, &categorySlug, &p.Title, &sensitivity,
 			&templateID, &p.TemplateNone, &currentPubVID,
 			&currentDraftVID,
 			&p.OwnerUserID,
 			&ackTriggersRaw, &ackAudienceOverride,
-			&p.CreatedAt, &p.UpdatedAt); err != nil {
+			&p.CreatedAt, &p.UpdatedAt,
+			&currentVersionNo, &currentVersionStatus); err != nil {
 			return nil, fmt.Errorf("PolicyStore.ListPolicies scan: %w", err)
 		}
 		p.DocumentType = domain.DocumentType(docType)
@@ -390,6 +439,12 @@ func (s *PolicyStore) ListPolicies(ctx context.Context, categoryID uuid.UUID, in
 			p.AckTriggers = &v
 		}
 		p.AckAudienceOverride = []uuid.UUID(ackAudienceOverride)
+		if currentVersionNo != nil {
+			p.CurrentVersionNo = *currentVersionNo
+		}
+		if currentVersionStatus != nil {
+			p.CurrentVersionStatus = domain.PolicyVersionStatus(*currentVersionStatus)
+		}
 		out = append(out, p)
 	}
 	if err := rows.Err(); err != nil {
