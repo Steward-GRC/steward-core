@@ -43,7 +43,7 @@ is reused for 5 seconds.
 | `Unauthenticated: no workload token` | The caller sent no `authorization` metadata: check its `WORKLOAD_TOKEN_FILE` and the projected token mount (audience `steward`). |
 | `Unauthenticated: workload token rejected` | The log line `caller token rejected` gives the reason: wrong `iss` or `aud`, expired, or a service account missing from `WORKLOAD_ALLOWED_SERVICEACCOUNTS`. |
 | `PermissionDenied: caller not allowed on this method` | The caller is verified but core's allow-list doesn't list it for the method. The `rpc.denied` audit event names the caller and method. |
-| `Unavailable: workload verifier unavailable` | No JWKS has loaded since start: `steward-depstate-jwks`, then the `JWKS refresh failed` log line (CA file, bearer file, issuer URL). |
+| `Unavailable: workload verifier unavailable` | No JWKS has loaded since start: `steward-depstate-jwks`, then the `JWKS refresh failed` log line (CA file, bearer file, issuer URL). Every call needing a token is refused and the pod stays not ready until a fetch succeeds. A `status 401` there means the API server refused `WORKLOAD_OIDC_BEARER_FILE`: it must hold a token with the API server's own audience, not the `steward` caller token. |
 | No events reach audit | `steward-depstate-rabbitmq` or `/readyz`, then the `audit` exchange and its binding to audit's queue. |
 
 ## Backups
