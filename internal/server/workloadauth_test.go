@@ -11,13 +11,16 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/Bugs5382/go-buildinfo/health"
 	grpcactor "github.com/Bugs5382/go-grpc-actor"
 	log "github.com/Bugs5382/go-log"
 	"github.com/golang-jwt/jwt/v5"
@@ -30,6 +33,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	corev1 "github.com/Steward-GRC/steward-core/gen/go/steward/core/v1"
+	"github.com/Steward-GRC/steward-core/internal/readiness"
 	"github.com/Steward-GRC/steward-core/internal/workloadauth"
 )
 
@@ -40,6 +44,9 @@ const testNS = "steward"
 type localIssuer struct {
 	url, caFile string
 	key         *ecdsa.PrivateKey
+	// jwksStatus, when set, is the status the JWKS endpoint answers instead
+	// of the key set.
+	jwksStatus atomic.Int32
 }
 
 func newLocalIssuer(t *testing.T) *localIssuer {
@@ -52,6 +59,10 @@ func newLocalIssuer(t *testing.T) *localIssuer {
 		_ = json.NewEncoder(w).Encode(map[string]string{"issuer": iss.url, "jwks_uri": iss.url + "/openid/v1/jwks"})
 	})
 	mux.HandleFunc("/openid/v1/jwks", func(w http.ResponseWriter, _ *http.Request) {
+		if code := iss.jwksStatus.Load(); code != 0 {
+			http.Error(w, http.StatusText(int(code)), int(code))
+			return
+		}
 		pub, err := key.PublicKey.ECDH()
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -179,4 +190,72 @@ func TestTrustOnBehalfNeedsAnOnBehalfGrant(t *testing.T) {
 	require.True(t, TrustOnBehalf(grant(workloadauth.OnBehalf), "/m"))
 	require.False(t, TrustOnBehalf(grant(workloadauth.Self), "/m"))
 	require.False(t, TrustOnBehalf(context.Background(), "/m"), "no verified caller, no trust")
+}
+
+type upDB struct{}
+
+func (upDB) Ping(context.Context) error                    { return nil }
+func (upDB) ServerVersion(context.Context) (string, error) { return "16.4", nil }
+
+type upBroker struct{}
+
+func (upBroker) Healthy() bool { return true }
+
+// The issuer refusing the JWKS fetch (as an API server does for a bearer with
+// the wrong audience) must never leave the verifier inert: a valid-looking
+// token is refused, and readiness drains the pod on both probes.
+func TestWorkloadAuthFailsClosedWhileTheJWKSIsRefused(t *testing.T) {
+	iss := newLocalIssuer(t)
+	iss.jwksStatus.Store(http.StatusUnauthorized)
+	v, err := workloadauth.NewVerifier(workloadauth.Config{
+		Issuer: iss.url, CAFile: iss.caFile, Audience: "steward",
+		AllowedServiceAccounts: []string{testNS + "/steward-gateway"},
+	}, log.Nop())
+	require.NoError(t, err)
+	require.Error(t, v.Refresh(context.Background()), "a 401 from the JWKS is a failed refresh")
+
+	checker, err := readiness.New(readiness.Deps{Postgres: upDB{}, Broker: upBroker{},
+		JWKS: readiness.RecheckEvery(v.Refresh, time.Minute, time.Now)}, health.WithTTL(time.Millisecond))
+	require.NoError(t, err)
+	conn, saw, stop := serve(t, Options{Checker: checker, CheckInterval: 20 * time.Millisecond, Auth: &Auth{
+		Verifier: v,
+		Policy:   workloadauth.Policy{getSettings: {"gateway": workloadauth.OnBehalf}},
+	}})
+	defer stop()
+
+	require.Equal(t, codes.Unavailable, callSettings(conn, bearerCtx(iss.token(t, "steward-gateway", "steward"))))
+	select {
+	case <-saw:
+		t.Fatal("the handler ran without a verified caller")
+	default:
+	}
+
+	hc := healthpb.NewHealthClient(conn)
+	for _, svc := range []string{"", ReadinessService} {
+		r, err := hc.Check(context.Background(), &healthpb.HealthCheckRequest{Service: svc})
+		require.NoError(t, err)
+		require.Equal(t, healthpb.HealthCheckResponse_NOT_SERVING, r.GetStatus(), "service %q", svc)
+	}
+	rep := checker.Report(context.Background())
+	require.False(t, rep.Ready)
+	var jwks *health.DependencyReport
+	for i := range rep.Dependencies {
+		if rep.Dependencies[i].Name == readiness.JWKS {
+			jwks = &rep.Dependencies[i]
+		}
+	}
+	require.NotNil(t, jwks, "the key set is listed in the readiness report")
+	require.True(t, jwks.Required)
+	require.Equal(t, health.StateDown, jwks.State)
+
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- ServeProbes(ctx, lis, checker) }()
+	defer func() { cancel(); require.NoError(t, <-done) }()
+	res, err := http.Get("http://" + lis.Addr().String() + "/readyz")
+	require.NoError(t, err)
+	_ = res.Body.Close()
+	require.Equal(t, http.StatusServiceUnavailable, res.StatusCode)
 }
