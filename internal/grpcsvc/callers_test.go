@@ -108,8 +108,20 @@ func TestCallerPolicyCollab(t *testing.T) {
 	})
 }
 
+// Identity's account merge and delete checks and previews call these,
+// passing the admin who runs them.
+func TestCallerPolicyIdentity(t *testing.T) {
+	requireCallerMethods(t, CallerIdentity, map[string]workloadauth.Access{
+		corev1.CategoryService_PurgeUserCategoryRules_FullMethodName: workloadauth.OnBehalf,
+		corev1.PolicyService_ListPoliciesByOwner_FullMethodName:      workloadauth.OnBehalf,
+		corev1.PolicyService_ReassignUserPolicies_FullMethodName:     workloadauth.OnBehalf,
+		corev1.PolicyService_GetPolicy_FullMethodName:                workloadauth.OnBehalf,
+		corev1.PolicyService_GetPolicyVersion_FullMethodName:         workloadauth.OnBehalf,
+	})
+}
+
 func TestCallerPolicyListsNoOtherCaller(t *testing.T) {
-	known := map[string]bool{CallerGateway: true, CallerDelivery: true, CallerWorkflow: true, CallerObligations: true, CallerCollab: true}
+	known := map[string]bool{CallerGateway: true, CallerDelivery: true, CallerWorkflow: true, CallerObligations: true, CallerCollab: true, CallerIdentity: true}
 	for m, callers := range CallerPolicy() {
 		for c := range callers {
 			require.True(t, known[c], "%s lists unknown caller %q", m, c)

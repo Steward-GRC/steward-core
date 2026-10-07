@@ -21,6 +21,7 @@ const (
 	CallerWorkflow    = "workflow"
 	CallerObligations = "obligations"
 	CallerCollab      = "collab"
+	CallerIdentity    = "identity"
 )
 
 var services = []grpc.ServiceDesc{
@@ -60,13 +61,24 @@ var (
 		corev1.CategoryService_GetCategory_FullMethodName,
 		corev1.PolicyService_GetPolicy_FullMethodName,
 	}
+	// identityMethods serve the account merge (re-own policies, label the
+	// acknowledgements it moves) and the delete check and preview (owned
+	// policies, the user's category rules).
+	identityMethods = []string{
+		corev1.CategoryService_PurgeUserCategoryRules_FullMethodName,
+		corev1.PolicyService_ListPoliciesByOwner_FullMethodName,
+		corev1.PolicyService_ReassignUserPolicies_FullMethodName,
+		corev1.PolicyService_GetPolicy_FullMethodName,
+		corev1.PolicyService_GetPolicyVersion_FullMethodName,
+	}
 )
 
 // CallerPolicy is core's per-method allow-list. The gateway passes the
 // signed-in user's actor on every method except the email-service secret,
 // which never reaches a browser. collab saves a draft on behalf of the editing
-// user. delivery, workflow and obligations act only as themselves. Anything
-// else is refused.
+// user. identity passes the admin running an account merge or delete.
+// delivery, workflow and obligations act only as themselves. Anything else is
+// refused.
 func CallerPolicy() workloadauth.Policy {
 	p := workloadauth.Policy{}
 	for _, sd := range services {
@@ -84,6 +96,9 @@ func CallerPolicy() workloadauth.Policy {
 		}
 	}
 	p[corev1.PolicyService_UpdateDraftContent_FullMethodName][CallerCollab] = workloadauth.OnBehalf
+	for _, m := range identityMethods {
+		p[m][CallerIdentity] = workloadauth.OnBehalf
+	}
 	return p
 }
 
