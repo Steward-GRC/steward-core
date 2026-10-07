@@ -37,9 +37,30 @@ and `email_service_config.updated`. No event carries a secret or document conten
 | `policy.published`, `procedure.published` | A version is published, with its section text for indexing. |
 | `policy.retired`, `procedure.retired` | A document is retired. |
 | `policy.obligation_changed` | A change that may alter who must acknowledge a policy. |
+| `policy.break_glass_read` | A document (policy or procedure) was read under a break-glass grant. Obligations tells its owner and the compliance admins. Unique `event_id` per read. |
 
 Reindexing sends the published content straight to the AI indexer's queues (`ai.policy.publish`,
 `ai.procedure.publish`) through the default exchange, so other `jobs` consumers don't see it again.
+
+## Break-glass reads
+
+A site admin who would see a document obfuscated can ask identity for a time-boxed break-glass grant
+on that one document (the gateway's `breakGlassReveal`). The gateway honours an active grant for that
+document only, and before it serves the content it calls `PolicyService.RecordBreakGlassRead` with
+the policy id and, for a single version, the version id. The reader is the forwarded actor.
+
+Core then:
+
+- records `policy.break_glass_read` in the audit tier, with the policy number and version id. During
+  act-as the actor is the real admin and `impersonated_user_id` names the user acted as, as for every
+  other event;
+- publishes `policy.break_glass_read` on `jobs` with the document, its owner, the reader and, during
+  act-as, the admin.
+
+Both must succeed. If either publish fails, or the service runs without the audit or jobs
+publisher, the call is `Unavailable` and the gateway serves nothing: a break-glass read is never
+served unrecorded. A version id that belongs to another policy is `InvalidArgument`, and a call
+with no forwarded actor is `Unauthenticated`.
 
 ## Calling other services
 

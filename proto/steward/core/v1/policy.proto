@@ -214,6 +214,17 @@ message RetirePolicyResponse {
   Policy policy = 1;
 }
 
+// RecordBreakGlassReadRequest names the document a caller is about to read
+// under an active break-glass grant. The reader is the forwarded actor, and
+// during act-as the admin is recorded too.
+message RecordBreakGlassReadRequest {
+  string policy_id = 1;
+  // The version being read, or empty for a read of the version list.
+  string policy_version_id = 2;
+}
+
+message RecordBreakGlassReadResponse {}
+
 // SetVersionStatusRequest writes a version's stored status: draft,
 // published, superseded or archived. The approval states live in workflow.
 message SetVersionStatusRequest {
@@ -451,6 +462,11 @@ service PolicyService {
   rpc DiscardDraft(DiscardDraftRequest) returns (DiscardDraftResponse);
   rpc DeletePolicy(DeletePolicyRequest) returns (DeletePolicyResponse);
   rpc RetirePolicy(RetirePolicyRequest) returns (RetirePolicyResponse);
+  // RecordBreakGlassRead audits one read of a document under an active
+  // break-glass grant and tells its owner and the compliance admins. The
+  // gateway calls it before it serves the content, and serves nothing when it
+  // fails.
+  rpc RecordBreakGlassRead(RecordBreakGlassReadRequest) returns (RecordBreakGlassReadResponse);
   // SetVersionStatus is how workflow writes an approval outcome back.
   rpc SetVersionStatus(SetVersionStatusRequest) returns (SetVersionStatusResponse);
   rpc SetPolicyOwner(SetPolicyOwnerRequest) returns (SetPolicyOwnerResponse);
