@@ -11,9 +11,13 @@ package lifecycle
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 )
+
+// errNoPublisher is returned by the emits that must not be skipped silently.
+var errNoPublisher = errors.New("lifecycle: no jobs publisher configured")
 
 // EventType identifies what happened to a document version.
 type EventType string
@@ -41,6 +45,11 @@ const (
 	// EventTypeProcedureRetired is the procedure counterpart of
 	// EventTypeRetired, kept out of the policy retire fan-out.
 	EventTypeProcedureRetired EventType = "procedure.retired"
+
+	// EventTypeBreakGlassRead is emitted for each read of a document under a
+	// break-glass grant, so obligations can tell its owner and the compliance
+	// admins. Policies and procedures share it.
+	EventTypeBreakGlassRead EventType = "policy.break_glass_read"
 )
 
 // RoutingKeyPublished carries EventTypePublished on the "jobs" exchange.
@@ -57,6 +66,9 @@ const RoutingKeyProcedurePublished = "procedure.published"
 
 // RoutingKeyProcedureRetired carries EventTypeProcedureRetired.
 const RoutingKeyProcedureRetired = "procedure.retired"
+
+// RoutingKeyBreakGlassRead carries EventTypeBreakGlassRead.
+const RoutingKeyBreakGlassRead = "policy.break_glass_read"
 
 // AIIndexQueue is the AI indexer's policy queue. A reindex publishes to the
 // default exchange with this routing key, so it reaches that one queue and
@@ -107,6 +119,23 @@ type PolicyVersionContent struct {
 type ObligationChangedEvent struct {
 	EventType EventType `json:"event_type"`
 	PolicyID  string    `json:"policy_id"`
+}
+
+// BreakGlassReadEvent is published for each read of a document under a
+// break-glass grant. EventID is unique per read, so a consumer never folds two
+// reads into one notice. ActAsAdminUserID is set during act-as.
+type BreakGlassReadEvent struct {
+	EventType        EventType `json:"event_type"`
+	EventID          string    `json:"event_id"`
+	ReadAt           time.Time `json:"read_at"`
+	PolicyID         string    `json:"policy_id"`
+	PolicyVersionID  string    `json:"policy_version_id,omitempty"`
+	Number           string    `json:"number"`
+	Title            string    `json:"title"`
+	DocumentType     string    `json:"document_type"`
+	OwnerUserID      string    `json:"owner_user_id"`
+	ReaderUserID     string    `json:"reader_user_id"`
+	ActAsAdminUserID string    `json:"act_as_admin_user_id,omitempty"`
 }
 
 // PolicyRetiredEvent is published when a document is retired.
@@ -308,4 +337,18 @@ func (e *Emitter) EmitProcedureRetired(ctx context.Context, retiredAt time.Time,
 		return fmt.Errorf("lifecycle: marshal procedure retired event: %w", err)
 	}
 	return e.pub.Publish(ctx, RoutingKeyProcedureRetired, body)
+}
+
+// EmitBreakGlassRead publishes one break-glass read.
+func (e *Emitter) EmitBreakGlassRead(ctx context.Context, evt BreakGlassReadEvent) error {
+	if e == nil || e.pub == nil {
+		return errNoPublisher
+	}
+	evt.EventType = EventTypeBreakGlassRead
+	evt.ReadAt = evt.ReadAt.UTC()
+	body, err := json.Marshal(evt)
+	if err != nil {
+		return fmt.Errorf("lifecycle: marshal break-glass read event: %w", err)
+	}
+	return e.pub.Publish(ctx, RoutingKeyBreakGlassRead, body)
 }
