@@ -38,6 +38,9 @@ Settings are in [configuration](docs/configuration.md). The version and commit s
 - [Runbook](docs/runbook.md).
 - [Error codes](docs/error-codes.md).
 
+- [Contributing](https://github.com/Steward-GRC/.github/blob/main/.github/CONTRIBUTING.md) and
+  [security](https://github.com/Steward-GRC/.github/blob/main/.github/SECURITY.md)
+
 ## 🛠 Develop
 
 ```bash
