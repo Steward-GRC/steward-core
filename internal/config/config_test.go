@@ -11,7 +11,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/Steward-GRC/steward-core/internal/workloadauth"
+	workloadidentity "github.com/Bugs5382/go-workload-identity"
 )
 
 func env(m map[string]string) func(string) string {
@@ -73,9 +73,10 @@ func TestLoadReadsEverySetting(t *testing.T) {
 	require.Equal(t, time.Minute, c.CacheTTL)
 	require.Equal(t, S3{Endpoint: "http://objects.example.org:9000", Bucket: "steward", Region: "eu-west-1", AccessKey: "ak", SecretKey: "sk"}, c.S3)
 	require.Equal(t, TLS{CertFile: "/tls/tls.crt", KeyFile: "/tls/tls.key", ClientCAFile: "/tls/ca.crt"}, c.TLS)
-	require.Equal(t, workloadauth.Config{
+	require.Equal(t, workloadidentity.Config{
 		Issuer: "https://issuer.example.org", JWKSURL: "https://issuer.example.org/openid/v1/jwks", CAFile: "/oidc/ca.crt",
-		BearerFile: "/oidc/token", Audience: "steward", AllowedServiceAccounts: []string{"steward/steward-gateway", "steward/steward-delivery"},
+		BearerFile: "/oidc/token", Audience: "steward", ServiceAccountPrefix: WorkloadServiceAccountPrefix,
+		AllowedServiceAccounts: []string{"steward/steward-gateway", "steward/steward-delivery"},
 	}, c.WorkloadAuth)
 }
 
@@ -83,7 +84,7 @@ func TestLoadFailsClosedWithoutWorkloadAuth(t *testing.T) {
 	m := base()
 	delete(m, "WORKLOAD_OIDC_ISSUER")
 	_, err := Load(env(m))
-	require.ErrorIs(t, err, workloadauth.ErrNotConfigured, "no issuer and no explicit off switch stops the boot")
+	require.ErrorIs(t, err, workloadidentity.ErrNotConfigured, "no issuer and no explicit off switch stops the boot")
 }
 
 func TestLoadTurnsWorkloadAuthOffOnlyWhenDisabled(t *testing.T) {
