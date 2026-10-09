@@ -12,9 +12,9 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 
+	workloadidentity "github.com/Bugs5382/go-workload-identity"
 	corev1 "github.com/Steward-GRC/steward-core/gen/go/steward/core/v1"
 	"github.com/Steward-GRC/steward-core/internal/audit"
-	"github.com/Steward-GRC/steward-core/internal/workloadauth"
 )
 
 var coreServices = []grpc.ServiceDesc{
@@ -35,10 +35,10 @@ func allMethods() []string {
 }
 
 // requireCallerMethods checks caller is listed with access on exactly want.
-func requireCallerMethods(t *testing.T, caller string, want map[string]workloadauth.Access) {
+func requireCallerMethods(t *testing.T, caller string, want map[string]workloadidentity.Access) {
 	t.Helper()
 	p := CallerPolicy()
-	got := map[string]workloadauth.Access{}
+	got := map[string]workloadidentity.Access{}
 	for _, m := range allMethods() {
 		if a, ok := p.Lookup(m, caller); ok {
 			got[m] = a
@@ -60,63 +60,63 @@ func TestCallerPolicyCoversEveryMethodAndNothingElse(t *testing.T) {
 }
 
 func TestCallerPolicyGateway(t *testing.T) {
-	want := map[string]workloadauth.Access{}
+	want := map[string]workloadidentity.Access{}
 	for _, m := range allMethods() {
 		if m != corev1.EmailServiceSecretService_GetEmailServiceSecret_FullMethodName {
-			want[m] = workloadauth.OnBehalf
+			want[m] = workloadidentity.OnBehalf
 		}
 	}
 	requireCallerMethods(t, CallerGateway, want)
 }
 
 func TestCallerPolicyDelivery(t *testing.T) {
-	requireCallerMethods(t, CallerDelivery, map[string]workloadauth.Access{
-		corev1.PolicyService_GetPolicy_FullMethodName:        workloadauth.Self,
-		corev1.PolicyService_GetPolicyVersion_FullMethodName: workloadauth.Self,
-		corev1.PolicyService_DiffVersions_FullMethodName:     workloadauth.Self,
-		corev1.AppendixService_ListAppendices_FullMethodName: workloadauth.Self,
+	requireCallerMethods(t, CallerDelivery, map[string]workloadidentity.Access{
+		corev1.PolicyService_GetPolicy_FullMethodName:        workloadidentity.Self,
+		corev1.PolicyService_GetPolicyVersion_FullMethodName: workloadidentity.Self,
+		corev1.PolicyService_DiffVersions_FullMethodName:     workloadidentity.Self,
+		corev1.AppendixService_ListAppendices_FullMethodName: workloadidentity.Self,
 	})
 }
 
 func TestCallerPolicyWorkflow(t *testing.T) {
-	requireCallerMethods(t, CallerWorkflow, map[string]workloadauth.Access{
-		corev1.CategoryService_GetCategory_FullMethodName:    workloadauth.Self,
-		corev1.PolicyService_GetPolicy_FullMethodName:        workloadauth.Self,
-		corev1.PolicyService_GetPolicyVersion_FullMethodName: workloadauth.Self,
-		corev1.PolicyService_SetVersionStatus_FullMethodName: workloadauth.Self,
+	requireCallerMethods(t, CallerWorkflow, map[string]workloadidentity.Access{
+		corev1.CategoryService_GetCategory_FullMethodName:    workloadidentity.Self,
+		corev1.PolicyService_GetPolicy_FullMethodName:        workloadidentity.Self,
+		corev1.PolicyService_GetPolicyVersion_FullMethodName: workloadidentity.Self,
+		corev1.PolicyService_SetVersionStatus_FullMethodName: workloadidentity.Self,
 	})
 }
 
 func TestCallerPolicyObligations(t *testing.T) {
-	requireCallerMethods(t, CallerObligations, map[string]workloadauth.Access{
-		corev1.CategoryService_GetCategory_FullMethodName:                     workloadauth.Self,
-		corev1.CategoryService_GetCategoryRuleset_FullMethodName:              workloadauth.Self,
-		corev1.PolicyService_GetPolicy_FullMethodName:                         workloadauth.Self,
-		corev1.PolicyService_GetPolicyVersion_FullMethodName:                  workloadauth.Self,
-		corev1.PolicyService_ListPolicyVersions_FullMethodName:                workloadauth.Self,
-		corev1.PolicyService_ListObligatingPolicies_FullMethodName:            workloadauth.Self,
-		corev1.PolicyService_ResolvePolicyObligation_FullMethodName:           workloadauth.Self,
-		corev1.EmailServiceSecretService_GetEmailServiceSecret_FullMethodName: workloadauth.Self,
+	requireCallerMethods(t, CallerObligations, map[string]workloadidentity.Access{
+		corev1.CategoryService_GetCategory_FullMethodName:                     workloadidentity.Self,
+		corev1.CategoryService_GetCategoryRuleset_FullMethodName:              workloadidentity.Self,
+		corev1.PolicyService_GetPolicy_FullMethodName:                         workloadidentity.Self,
+		corev1.PolicyService_GetPolicyVersion_FullMethodName:                  workloadidentity.Self,
+		corev1.PolicyService_ListPolicyVersions_FullMethodName:                workloadidentity.Self,
+		corev1.PolicyService_ListObligatingPolicies_FullMethodName:            workloadidentity.Self,
+		corev1.PolicyService_ResolvePolicyObligation_FullMethodName:           workloadidentity.Self,
+		corev1.EmailServiceSecretService_GetEmailServiceSecret_FullMethodName: workloadidentity.Self,
 	})
 }
 
 func TestCallerPolicyCollab(t *testing.T) {
-	requireCallerMethods(t, CallerCollab, map[string]workloadauth.Access{
-		corev1.CategoryService_GetCategory_FullMethodName:      workloadauth.Self,
-		corev1.PolicyService_GetPolicy_FullMethodName:          workloadauth.Self,
-		corev1.PolicyService_UpdateDraftContent_FullMethodName: workloadauth.OnBehalf,
+	requireCallerMethods(t, CallerCollab, map[string]workloadidentity.Access{
+		corev1.CategoryService_GetCategory_FullMethodName:      workloadidentity.Self,
+		corev1.PolicyService_GetPolicy_FullMethodName:          workloadidentity.Self,
+		corev1.PolicyService_UpdateDraftContent_FullMethodName: workloadidentity.OnBehalf,
 	})
 }
 
 // Identity's account merge and delete checks and previews call these,
 // passing the admin who runs them.
 func TestCallerPolicyIdentity(t *testing.T) {
-	requireCallerMethods(t, CallerIdentity, map[string]workloadauth.Access{
-		corev1.CategoryService_PurgeUserCategoryRules_FullMethodName: workloadauth.OnBehalf,
-		corev1.PolicyService_ListPoliciesByOwner_FullMethodName:      workloadauth.OnBehalf,
-		corev1.PolicyService_ReassignUserPolicies_FullMethodName:     workloadauth.OnBehalf,
-		corev1.PolicyService_GetPolicy_FullMethodName:                workloadauth.OnBehalf,
-		corev1.PolicyService_GetPolicyVersion_FullMethodName:         workloadauth.OnBehalf,
+	requireCallerMethods(t, CallerIdentity, map[string]workloadidentity.Access{
+		corev1.CategoryService_PurgeUserCategoryRules_FullMethodName: workloadidentity.OnBehalf,
+		corev1.PolicyService_ListPoliciesByOwner_FullMethodName:      workloadidentity.OnBehalf,
+		corev1.PolicyService_ReassignUserPolicies_FullMethodName:     workloadidentity.OnBehalf,
+		corev1.PolicyService_GetPolicy_FullMethodName:                workloadidentity.OnBehalf,
+		corev1.PolicyService_GetPolicyVersion_FullMethodName:         workloadidentity.OnBehalf,
 	})
 }
 
@@ -127,7 +127,7 @@ func TestCallerPolicyListsNoOtherCaller(t *testing.T) {
 			require.True(t, known[c], "%s lists unknown caller %q", m, c)
 		}
 	}
-	requireCallerMethods(t, "ai", map[string]workloadauth.Access{})
+	requireCallerMethods(t, "ai", map[string]workloadidentity.Access{})
 }
 
 type recordingEmitter struct{ evs []audit.Event }
@@ -140,11 +140,11 @@ func (r *recordingEmitter) Emit(_ context.Context, ev audit.Event) error {
 func TestAuditDenialRecordsTheCallerNotAClaimedUser(t *testing.T) {
 	rec := &recordingEmitter{}
 	hook := AuditDenial(rec, log.Nop())
-	hook(context.Background(), workloadauth.Denial{
-		Method: corev1.PolicyService_GetPolicy_FullMethodName, Code: codes.PermissionDenied, Reason: workloadauth.ReasonMethodNotAllowed,
-		Caller: workloadauth.Caller{Name: "reporting", ServiceAccount: "steward/steward-reporting"},
+	hook(context.Background(), workloadidentity.Denial{
+		Method: corev1.PolicyService_GetPolicy_FullMethodName, Code: codes.PermissionDenied, Reason: workloadidentity.ReasonMethodNotAllowed,
+		Caller: workloadidentity.Caller{Name: "reporting", ServiceAccount: "steward/steward-reporting"},
 	})
-	hook(context.Background(), workloadauth.Denial{Method: "/m", Code: codes.Unauthenticated, Reason: workloadauth.ReasonNoToken})
+	hook(context.Background(), workloadidentity.Denial{Method: "/m", Code: codes.Unauthenticated, Reason: workloadidentity.ReasonNoToken})
 	require.Len(t, rec.evs, 2)
 	require.Equal(t, audit.TierAudit, rec.evs[0].Tier)
 	require.Equal(t, "rpc.denied", rec.evs[0].Action)
@@ -152,7 +152,7 @@ func TestAuditDenialRecordsTheCallerNotAClaimedUser(t *testing.T) {
 	require.Equal(t, corev1.PolicyService_GetPolicy_FullMethodName, rec.evs[0].Subject)
 	require.Equal(t, map[string]string{
 		"method": corev1.PolicyService_GetPolicy_FullMethodName, "caller": "reporting", "service_account": "steward/steward-reporting",
-		"code": "PermissionDenied", "reason": workloadauth.ReasonMethodNotAllowed,
+		"code": "PermissionDenied", "reason": workloadidentity.ReasonMethodNotAllowed,
 	}, rec.evs[0].Attributes)
 	require.Equal(t, "service:unauthenticated", rec.evs[1].ActorUserID)
 }

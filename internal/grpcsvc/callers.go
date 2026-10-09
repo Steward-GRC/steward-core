@@ -9,9 +9,9 @@ import (
 	log "github.com/Bugs5382/go-log"
 	"google.golang.org/grpc"
 
+	workloadidentity "github.com/Bugs5382/go-workload-identity"
 	corev1 "github.com/Steward-GRC/steward-core/gen/go/steward/core/v1"
 	"github.com/Steward-GRC/steward-core/internal/audit"
-	"github.com/Steward-GRC/steward-core/internal/workloadauth"
 )
 
 // Caller names, from the service accounts steward-<name>.
@@ -79,25 +79,25 @@ var (
 // user. identity passes the admin running an account merge or delete.
 // delivery, workflow and obligations act only as themselves. Anything else is
 // refused.
-func CallerPolicy() workloadauth.Policy {
-	p := workloadauth.Policy{}
+func CallerPolicy() workloadidentity.Policy {
+	p := workloadidentity.Policy{}
 	for _, sd := range services {
 		for _, md := range sd.Methods {
-			p["/"+sd.ServiceName+"/"+md.MethodName] = map[string]workloadauth.Access{CallerGateway: workloadauth.OnBehalf}
+			p["/"+sd.ServiceName+"/"+md.MethodName] = map[string]workloadidentity.Access{CallerGateway: workloadidentity.OnBehalf}
 		}
 	}
-	p[corev1.EmailServiceSecretService_GetEmailServiceSecret_FullMethodName] = map[string]workloadauth.Access{}
+	p[corev1.EmailServiceSecretService_GetEmailServiceSecret_FullMethodName] = map[string]workloadidentity.Access{}
 	for caller, methods := range map[string][]string{
 		CallerDelivery: deliveryMethods, CallerWorkflow: workflowMethods,
 		CallerObligations: obligationsMethods, CallerCollab: collabMethods,
 	} {
 		for _, m := range methods {
-			p[m][caller] = workloadauth.Self
+			p[m][caller] = workloadidentity.Self
 		}
 	}
-	p[corev1.PolicyService_UpdateDraftContent_FullMethodName][CallerCollab] = workloadauth.OnBehalf
+	p[corev1.PolicyService_UpdateDraftContent_FullMethodName][CallerCollab] = workloadidentity.OnBehalf
 	for _, m := range identityMethods {
-		p[m][CallerIdentity] = workloadauth.OnBehalf
+		p[m][CallerIdentity] = workloadidentity.OnBehalf
 	}
 	return p
 }
@@ -105,8 +105,8 @@ func CallerPolicy() workloadauth.Policy {
 // AuditDenial records a call the workload-auth interceptor refused, as
 // rpc.denied in the audit tier. The actor is the authenticated caller (or
 // "unauthenticated"), never a user the call claimed.
-func AuditDenial(emitter auditEmitter, lg log.Logger) workloadauth.DenyHook {
-	return func(ctx context.Context, d workloadauth.Denial) {
+func AuditDenial(emitter auditEmitter, lg log.Logger) workloadidentity.DenyHook {
+	return func(ctx context.Context, d workloadidentity.Denial) {
 		caller := d.Caller.Name
 		if caller == "" {
 			caller = "unauthenticated"

@@ -31,6 +31,7 @@ import (
 	redis "github.com/Bugs5382/go-redis"
 	"google.golang.org/grpc"
 
+	workloadidentity "github.com/Bugs5382/go-workload-identity"
 	corev1 "github.com/Steward-GRC/steward-core/gen/go/steward/core/v1"
 	"github.com/Steward-GRC/steward-core/internal/audit"
 	"github.com/Steward-GRC/steward-core/internal/cache"
@@ -41,7 +42,6 @@ import (
 	"github.com/Steward-GRC/steward-core/internal/readiness"
 	"github.com/Steward-GRC/steward-core/internal/server"
 	"github.com/Steward-GRC/steward-core/internal/store"
-	"github.com/Steward-GRC/steward-core/internal/workloadauth"
 )
 
 const serviceName = "core"
@@ -162,14 +162,14 @@ func run(ctx context.Context, logger log.Logger) error {
 	}
 	var auth *server.Auth
 	if cfg.WorkloadAuthEnabled {
-		v, err := workloadauth.NewVerifier(cfg.WorkloadAuth, logger)
+		v, err := workloadidentity.NewVerifier(cfg.WorkloadAuth, logger)
 		if err != nil {
 			return fmt.Errorf("workload auth: %w", err)
 		}
 		go v.Run(ctx)
 		deps.JWKS = readiness.RecheckEvery(v.Refresh, jwksRecheck, time.Now)
-		auth = &server.Auth{Verifier: v, Policy: grpcsvc.CallerPolicy(), Options: []workloadauth.Option{
-			workloadauth.WithDenyHook(grpcsvc.AuditDenial(audit.New(publisher{auditPub}), logger)),
+		auth = &server.Auth{Verifier: v, Policy: grpcsvc.CallerPolicy(), Options: []workloadidentity.Option{
+			workloadidentity.WithDenyHook(grpcsvc.AuditDenial(audit.New(publisher{auditPub}), logger)),
 		}}
 		logger.Info("service-to-service authentication on",
 			log.F("issuer", cfg.WorkloadAuth.Issuer), log.F("audience", cfg.WorkloadAuth.Audience),
@@ -178,7 +178,7 @@ func run(ctx context.Context, logger log.Logger) error {
 			log.F("allowed_serviceaccounts", strings.Join(cfg.WorkloadAuth.AllowedServiceAccounts, ",")))
 	} else {
 		deps.WorkloadAuthDisabled = true
-		go workloadauth.WarnDisabled(ctx, logger, workloadauth.DisabledWarnInterval)
+		go workloadidentity.WarnDisabled(ctx, logger, workloadidentity.DisabledWarnInterval)
 	}
 
 	checker, err := readiness.New(deps, health.WithTTL(5*time.Second), health.WithTimeout(2*time.Second), health.WithLogger(logger))
