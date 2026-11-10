@@ -6,7 +6,7 @@ stubs committed in `gen/go`. Access to every RPC is enforced at the gateway; cor
 
 | Service | Holds |
 | --- | --- |
-| `CategoryService` | The category tree, governance and its inheritance, and the ordered access rules. `SetCategoryRuleset` validates rules with steward-authz; `PurgeUserCategoryRules` removes a deleted user's rules. |
+| `CategoryService` | The category tree, governance and its inheritance, and the ordered access rules. `SetCategoryRuleset` validates rules with steward-authz; `PurgeUserCategoryRules` removes a deleted user's rules. Siblings have a stored order (`order_index`, from zero under each parent): a new category and a moved one go last, `ReorderCategories` sets the order of one parent's children (empty `parent_id` for the roots) from a list that holds every child exactly once, and `ListCategoryChildren` returns them in that order. |
 | `PolicyService` | Policies and procedures: drafts, publish, versions, diffs, templates, sensitivity, rename, move, owners, acknowledgement settings and reindexing. |
 | `TemplateService` | Templates and their versions. |
 | `AppendixService` | Appendices of a draft version. |

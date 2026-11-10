@@ -62,6 +62,10 @@ message Category {
   bool ack_everyone = 16;
   // True when ack_everyone is set here rather than inherited.
   bool ack_everyone_set = 17;
+  // The position among the siblings under the same parent, counted from
+  // zero; lower comes first. Gaps are possible after a delete, so only the
+  // relative order counts.
+  int32 order_index = 18;
 }
 
 message CreateCategoryRequest {
@@ -138,10 +142,25 @@ message MoveCategoryRequest {
   string new_parent_id = 2;
 }
 
+// MoveCategoryResponse carries the moved category, which now goes last among
+// the children of its new parent.
 message MoveCategoryResponse {
   Category category = 1;
   // The number of categories in the moved subtree.
   uint32 affected_count = 2;
+}
+
+// ReorderCategoriesRequest sets the sibling order of one parent's children from
+// their position in ordered_ids, which must list every child of that parent
+// exactly once. An empty parent_id reorders the roots.
+message ReorderCategoriesRequest {
+  string parent_id = 1;
+  repeated string ordered_ids = 2;
+}
+
+// ReorderCategoriesResponse lists the children of the parent in the new order.
+message ReorderCategoriesResponse {
+  repeated Category categories = 1;
 }
 
 message SetGovernanceRequest {
@@ -262,6 +281,9 @@ service CategoryService {
   rpc RenameCategory(RenameCategoryRequest) returns (RenameCategoryResponse);
   rpc DeleteCategory(DeleteCategoryRequest) returns (DeleteCategoryResponse);
   rpc MoveCategory(MoveCategoryRequest) returns (MoveCategoryResponse);
+  // ReorderCategories sets the order of one parent's children. It is
+  // InvalidArgument when the list is not every child exactly once.
+  rpc ReorderCategories(ReorderCategoriesRequest) returns (ReorderCategoriesResponse);
   rpc SetGovernance(SetGovernanceRequest) returns (SetGovernanceResponse);
   rpc GetEffectiveGovernance(GetEffectiveGovernanceRequest) returns (GetEffectiveGovernanceResponse);
   rpc GetCategoryRuleset(GetCategoryRulesetRequest) returns (GetCategoryRulesetResponse);

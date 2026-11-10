@@ -960,3 +960,178 @@ func TestCategoryStore_PurgeUserCategoryRules(t *testing.T) {
 		t.Fatalf("purge for an unknown user: got %+v err=%v", got, err)
 	}
 }
+
+func TestCategoryStoreNewCategoriesAppendInOrder(t *testing.T) {
+	gs := store.NewCategoryStore(newTestDB(t))
+	ctx := context.Background()
+
+	mk := func(name, slug string, parent uuid.UUID) domain.Category {
+		g, err := domain.NewCategory(name, slug, parent)
+		if err != nil {
+			t.Fatalf("NewCategory %s: %v", name, err)
+		}
+		g, err = gs.Create(ctx, g)
+		if err != nil {
+			t.Fatalf("Create %s: %v", name, err)
+		}
+		return g
+	}
+
+	// Created in reverse name and slug order: the order is creation order.
+	z := mk("Zeta", "zeta", uuid.Nil)
+	m := mk("Mid", "mid", uuid.Nil)
+	a := mk("Alpha", "alpha", uuid.Nil)
+	child := mk("Only", "only", z.ID)
+
+	roots, err := gs.ListChildren(ctx, uuid.Nil)
+	if err != nil {
+		t.Fatalf("ListChildren roots: %v", err)
+	}
+	if got := categoryIDs(roots); !equalIDs(got, []uuid.UUID{z.ID, m.ID, a.ID}) {
+		t.Fatalf("root order: got %v want zeta, mid, alpha", got)
+	}
+	for i, r := range roots {
+		if r.OrderIndex != i {
+			t.Fatalf("root %s order index: got %d want %d", r.Slug, r.OrderIndex, i)
+		}
+	}
+	// Each parent counts from zero on its own.
+	if got, err := gs.Get(ctx, child.ID); err != nil || got.OrderIndex != 0 {
+		t.Fatalf("first child: order index %d err %v, want 0", got.OrderIndex, err)
+	}
+}
+
+func TestCategoryStoreMoveCategoryGoesLast(t *testing.T) {
+	gs := store.NewCategoryStore(newTestDB(t))
+	ctx := context.Background()
+
+	mk := func(slug string, parent uuid.UUID) domain.Category {
+		g, _ := domain.NewCategory(slug, slug, parent)
+		g, err := gs.Create(ctx, g)
+		if err != nil {
+			t.Fatalf("Create %s: %v", slug, err)
+		}
+		return g
+	}
+	a := mk("a", uuid.Nil)
+	b := mk("b", uuid.Nil)
+	a1 := mk("a1", a.ID)
+	a2 := mk("a2", a.ID)
+
+	moved, _, err := gs.MoveCategory(ctx, b.ID, &a.ID)
+	if err != nil {
+		t.Fatalf("MoveCategory b under a: %v", err)
+	}
+	kids, err := gs.ListChildren(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("ListChildren: %v", err)
+	}
+	if got := categoryIDs(kids); !equalIDs(got, []uuid.UUID{a1.ID, a2.ID, b.ID}) {
+		t.Fatalf("children of a: got %v want a1, a2, b", got)
+	}
+	if moved.OrderIndex != 2 {
+		t.Fatalf("moved order index: got %d want 2", moved.OrderIndex)
+	}
+
+	// Moving to the top level goes last among the roots too.
+	if _, _, err := gs.MoveCategory(ctx, a2.ID, nil); err != nil {
+		t.Fatalf("MoveCategory a2 to root: %v", err)
+	}
+	roots, _ := gs.ListChildren(ctx, uuid.Nil)
+	if got := categoryIDs(roots); !equalIDs(got, []uuid.UUID{a.ID, a2.ID}) {
+		t.Fatalf("roots: got %v want a, a2", got)
+	}
+}
+
+func TestCategoryStoreReorderChildren(t *testing.T) {
+	gs := store.NewCategoryStore(newTestDB(t))
+	ctx := context.Background()
+
+	mk := func(slug string, parent uuid.UUID) domain.Category {
+		g, _ := domain.NewCategory(slug, slug, parent)
+		g, err := gs.Create(ctx, g)
+		if err != nil {
+			t.Fatalf("Create %s: %v", slug, err)
+		}
+		return g
+	}
+	p := mk("p", uuid.Nil)
+	c1, c2, c3 := mk("c1", p.ID), mk("c2", p.ID), mk("c3", p.ID)
+	other := mk("other", uuid.Nil)
+	o1 := mk("o1", other.ID)
+
+	got, err := gs.ReorderChildren(ctx, p.ID, []uuid.UUID{c3.ID, c1.ID, c2.ID})
+	if err != nil {
+		t.Fatalf("ReorderChildren: %v", err)
+	}
+	want := []uuid.UUID{c3.ID, c1.ID, c2.ID}
+	if !equalIDs(categoryIDs(got), want) {
+		t.Fatalf("returned order: got %v want %v", categoryIDs(got), want)
+	}
+	listed, _ := gs.ListChildren(ctx, p.ID)
+	if !equalIDs(categoryIDs(listed), want) {
+		t.Fatalf("listed order: got %v want %v", categoryIDs(listed), want)
+	}
+	for i, c := range listed {
+		if c.OrderIndex != i {
+			t.Fatalf("%s order index: got %d want %d", c.Slug, c.OrderIndex, i)
+		}
+	}
+	// The other parent is untouched.
+	if oo, _ := gs.Get(ctx, o1.ID); oo.OrderIndex != 0 {
+		t.Fatalf("other parent's child changed: %d", oo.OrderIndex)
+	}
+
+	// The roots reorder too, with an empty parent.
+	if _, err := gs.ReorderChildren(ctx, uuid.Nil, []uuid.UUID{other.ID, p.ID}); err != nil {
+		t.Fatalf("ReorderChildren roots: %v", err)
+	}
+	roots, _ := gs.ListChildren(ctx, uuid.Nil)
+	if !equalIDs(categoryIDs(roots), []uuid.UUID{other.ID, p.ID}) {
+		t.Fatalf("roots after reorder: %v", categoryIDs(roots))
+	}
+
+	// A bad list changes nothing.
+	before, _ := gs.ListChildren(ctx, p.ID)
+	for name, ids := range map[string][]uuid.UUID{
+		"missing a child": {c3.ID, c1.ID},
+		"repeated child":  {c3.ID, c1.ID, c1.ID},
+		"other parent":    {c3.ID, c1.ID, o1.ID},
+		"extra child":     {c3.ID, c1.ID, c2.ID, o1.ID},
+		"unknown id":      {c3.ID, c1.ID, uuid.New()},
+		"empty":           {},
+	} {
+		if _, err := gs.ReorderChildren(ctx, p.ID, ids); !errors.Is(err, store.ErrCategoryReorderMismatch) {
+			t.Fatalf("%s: expected ErrCategoryReorderMismatch, got %v", name, err)
+		}
+	}
+	after, _ := gs.ListChildren(ctx, p.ID)
+	if !equalIDs(categoryIDs(after), categoryIDs(before)) {
+		t.Fatalf("a refused reorder changed the order: %v -> %v", categoryIDs(before), categoryIDs(after))
+	}
+
+	// An unknown parent is not found.
+	if _, err := gs.ReorderChildren(ctx, uuid.New(), []uuid.UUID{c1.ID}); !errors.Is(err, store.ErrCategoryNotFound) {
+		t.Fatalf("unknown parent: expected ErrCategoryNotFound, got %v", err)
+	}
+}
+
+func categoryIDs(list []domain.Category) []uuid.UUID {
+	out := make([]uuid.UUID, len(list))
+	for i, g := range list {
+		out[i] = g.ID
+	}
+	return out
+}
+
+func equalIDs(a, b []uuid.UUID) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}

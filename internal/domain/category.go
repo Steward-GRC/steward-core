@@ -55,8 +55,11 @@ type Category struct {
 	// AckEveryone, when it resolves to true, makes every user the audience.
 	// AckTriggers still decides whether an acknowledgement is needed at all.
 	AckEveryone *bool
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	// OrderIndex is the position among the siblings under the same parent,
+	// counted from zero. Only the relative order counts: a delete leaves a gap.
+	OrderIndex int
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
 }
 
 func NewCategory(name, slug string, parentID uuid.UUID) (Category, error) {
