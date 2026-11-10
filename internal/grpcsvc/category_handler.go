@@ -36,6 +36,7 @@ type CategoryStorer interface {
 	Rename(ctx context.Context, id uuid.UUID, name, slug string) (domain.Category, error)
 	Delete(ctx context.Context, id uuid.UUID) error
 	MoveCategory(ctx context.Context, categoryID uuid.UUID, newParentID *uuid.UUID) (domain.Category, int, error)
+	ReorderChildren(ctx context.Context, parentID uuid.UUID, orderedIDs []uuid.UUID) ([]domain.Category, error)
 	SetGovernance(ctx context.Context, id uuid.UUID, owners []uuid.UUID, audienceGroupIDs *[]string, ack domain.AckTrigger, cadence domain.ReviewCadence, reviewDate *time.Time, exclusionGroupIDs *[]string, ackEveryone *bool) (domain.Category, error)
 	Subtree(ctx context.Context, rootID uuid.UUID) ([]domain.Category, error)
 	GetCategoryRuleset(ctx context.Context, categoryID uuid.UUID) ([]domain.CategoryRule, error)
@@ -202,6 +203,7 @@ func categoryToProto(g domain.Category) *corev1.Category {
 		ExclusionGroupIdsSet: exclusionGroupIDsSet,
 		AckEveryone:          ackEveryone,
 		AckEveryoneSet:       ackEveryoneSet,
+		OrderIndex:           toInt32(g.OrderIndex),
 	}
 }
 
@@ -515,6 +517,55 @@ func (h *CategoryHandler) MoveCategory(ctx context.Context, req *corev1.MoveCate
 		Category:      categoryToProto(g),
 		AffectedCount: toUint32(affected),
 	}, nil
+}
+
+// ReorderCategories handles CategoryService.ReorderCategories. A list that is
+// not every child of the parent exactly once is InvalidArgument and nothing
+// changes; an empty parent_id reorders the roots.
+func (h *CategoryHandler) ReorderCategories(ctx context.Context, req *corev1.ReorderCategoriesRequest) (*corev1.ReorderCategoriesResponse, error) {
+	parentID, err := parseOptionalUUID(req.GetParentId())
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid parent_id: %v", err)
+	}
+	ids := make([]uuid.UUID, len(req.GetOrderedIds()))
+	for i, s := range req.GetOrderedIds() {
+		id, err := uuid.Parse(s)
+		if err != nil {
+			return nil, status.Errorf(codes.InvalidArgument, "ordered_ids[%d]: %v", i, err)
+		}
+		ids[i] = id
+	}
+	list, err := h.store.ReorderChildren(ctx, parentID, ids)
+	if err != nil {
+		switch {
+		case errors.Is(err, store.ErrCategoryNotFound):
+			return nil, status.Errorf(codes.NotFound, "reorder categories: %v", err)
+		case errors.Is(err, store.ErrCategoryReorderMismatch):
+			return nil, status.Errorf(codes.InvalidArgument, "reorder categories: %v", err)
+		default:
+			return nil, status.Errorf(codes.Internal, "reorder categories: %v", err)
+		}
+	}
+	if h.auditor != nil {
+		subject := "category:root"
+		if parentID != uuid.Nil {
+			subject = "category:" + parentID.String()
+		}
+		_ = h.auditor.Emit(ctx, audit.Event{
+			Tier:    audit.TierAudit,
+			Action:  "category.reordered",
+			Subject: subject,
+			GroupID: nilableUUID(parentID),
+			Attributes: map[string]string{
+				"child_count": strconv.Itoa(len(list)),
+			},
+		})
+	}
+	out := make([]*corev1.Category, len(list))
+	for i, g := range list {
+		out[i] = categoryToProto(g)
+	}
+	return &corev1.ReorderCategoriesResponse{Categories: out}, nil
 }
 
 // GetEffectiveGovernance handles CategoryService.GetEffectiveGovernance:

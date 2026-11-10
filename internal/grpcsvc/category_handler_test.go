@@ -187,6 +187,37 @@ func (f *fakeCategoryStore) MoveCategory(_ context.Context, categoryID uuid.UUID
 	return g, len(subtree), nil
 }
 
+// ReorderChildren repeats the store's every-child-exactly-once rule in memory.
+func (f *fakeCategoryStore) ReorderChildren(_ context.Context, parentID uuid.UUID, orderedIDs []uuid.UUID) ([]domain.Category, error) {
+	if _, ok := f.categories[parentID]; !ok && parentID != uuid.Nil {
+		return nil, store.ErrCategoryNotFound
+	}
+	children := 0
+	for _, g := range f.categories {
+		if g.ParentID == parentID {
+			children++
+		}
+	}
+	seen := map[uuid.UUID]bool{}
+	for _, id := range orderedIDs {
+		if g, ok := f.categories[id]; !ok || g.ParentID != parentID || seen[id] {
+			return nil, store.ErrCategoryReorderMismatch
+		}
+		seen[id] = true
+	}
+	if len(orderedIDs) != children {
+		return nil, store.ErrCategoryReorderMismatch
+	}
+	out := make([]domain.Category, len(orderedIDs))
+	for i, id := range orderedIDs {
+		g := f.categories[id]
+		g.OrderIndex = i
+		f.categories[id] = g
+		out[i] = g
+	}
+	return out, nil
+}
+
 func (f *fakeCategoryStore) Subtree(_ context.Context, rootID uuid.UUID) ([]domain.Category, error) {
 	var out []domain.Category
 	visited := map[uuid.UUID]bool{}
@@ -827,5 +858,103 @@ func TestMoveCategoryCycleRejected(t *testing.T) {
 	}
 	if got.Category.ParentId != root {
 		t.Fatalf("failed cycle move must not change hierarchy; child parent = %q", got.Category.ParentId)
+	}
+}
+
+func TestReorderCategoriesReturnsChildrenInTheNewOrder(t *testing.T) {
+	cap := &capturePublisher{}
+	h := grpcsvc.NewCategoryHandler(newFakeCategoryStore(), grpcsvc.NewImpersonationEmitter(audit.New(cap)))
+	ctx := context.Background()
+
+	parent := makeCategory(t, h, "P", "p", "")
+	c1 := makeCategory(t, h, "C1", "c1", parent)
+	c2 := makeCategory(t, h, "C2", "c2", parent)
+	c3 := makeCategory(t, h, "C3", "c3", parent)
+
+	resp, err := h.ReorderCategories(ctx, &corev1.ReorderCategoriesRequest{ParentId: parent, OrderedIds: []string{c3, c1, c2}})
+	if err != nil {
+		t.Fatalf("ReorderCategories: %v", err)
+	}
+	var got []string
+	for i, c := range resp.Categories {
+		got = append(got, c.Id)
+		if c.OrderIndex != int32(i) {
+			t.Fatalf("category %s order_index: got %d want %d", c.Id, c.OrderIndex, i)
+		}
+	}
+	if fmt.Sprint(got) != fmt.Sprint([]string{c3, c1, c2}) {
+		t.Fatalf("order: got %v want %v", got, []string{c3, c1, c2})
+	}
+
+	var events []audit.Event
+	for _, c := range cap.calls {
+		if c.event.Action == "category.reordered" {
+			events = append(events, c.event)
+		}
+	}
+	if len(events) != 1 || events[0].Subject != "category:"+parent {
+		t.Fatalf("expected one category.reordered event for the parent, got %+v", events)
+	}
+}
+
+func TestReorderCategoriesRoots(t *testing.T) {
+	h := grpcsvc.NewCategoryHandler(newFakeCategoryStore(), nil)
+	a := makeCategory(t, h, "A", "a", "")
+	b := makeCategory(t, h, "B", "b", "")
+
+	resp, err := h.ReorderCategories(context.Background(), &corev1.ReorderCategoriesRequest{OrderedIds: []string{b, a}})
+	if err != nil {
+		t.Fatalf("ReorderCategories roots: %v", err)
+	}
+	if len(resp.Categories) != 2 || resp.Categories[0].Id != b || resp.Categories[1].Id != a {
+		t.Fatalf("roots: got %+v", resp.Categories)
+	}
+}
+
+func TestReorderCategoriesRefusals(t *testing.T) {
+	cap := &capturePublisher{}
+	h := grpcsvc.NewCategoryHandler(newFakeCategoryStore(), grpcsvc.NewImpersonationEmitter(audit.New(cap)))
+	ctx := context.Background()
+
+	parent := makeCategory(t, h, "P", "p", "")
+	c1 := makeCategory(t, h, "C1", "c1", parent)
+	c2 := makeCategory(t, h, "C2", "c2", parent)
+	stranger := makeCategory(t, h, "S", "s", "")
+
+	cases := map[string]struct {
+		req  *corev1.ReorderCategoriesRequest
+		want codes.Code
+	}{
+		"bad parent id":   {&corev1.ReorderCategoriesRequest{ParentId: "nope", OrderedIds: []string{c1, c2}}, codes.InvalidArgument},
+		"bad child id":    {&corev1.ReorderCategoriesRequest{ParentId: parent, OrderedIds: []string{c1, "nope"}}, codes.InvalidArgument},
+		"missing a child": {&corev1.ReorderCategoriesRequest{ParentId: parent, OrderedIds: []string{c1}}, codes.InvalidArgument},
+		"repeated child":  {&corev1.ReorderCategoriesRequest{ParentId: parent, OrderedIds: []string{c1, c1}}, codes.InvalidArgument},
+		"other parent":    {&corev1.ReorderCategoriesRequest{ParentId: parent, OrderedIds: []string{c1, stranger}}, codes.InvalidArgument},
+		"unknown parent":  {&corev1.ReorderCategoriesRequest{ParentId: uuid.NewString(), OrderedIds: []string{c1}}, codes.NotFound},
+	}
+	for name, tc := range cases {
+		if _, err := h.ReorderCategories(ctx, tc.req); status.Code(err) != tc.want {
+			t.Fatalf("%s: got %v (code %s), want %s", name, err, status.Code(err), tc.want)
+		}
+	}
+	for _, c := range cap.calls {
+		if c.event.Action == "category.reordered" {
+			t.Fatalf("a refused reorder must not be audited: %+v", c.event)
+		}
+	}
+}
+
+func TestListCategoryChildrenCarriesTheOrderIndex(t *testing.T) {
+	fs := newFakeCategoryStore()
+	id := uuid.New()
+	fs.categories[id] = domain.Category{ID: id, Name: "X", Slug: "x", OrderIndex: 4}
+	h := grpcsvc.NewCategoryHandler(fs, nil)
+
+	resp, err := h.ListCategoryChildren(context.Background(), &corev1.ListCategoryChildrenRequest{})
+	if err != nil {
+		t.Fatalf("ListCategoryChildren: %v", err)
+	}
+	if len(resp.Categories) != 1 || resp.Categories[0].OrderIndex != 4 {
+		t.Fatalf("order_index not carried: %+v", resp.Categories)
 	}
 }
