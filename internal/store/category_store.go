@@ -39,6 +39,15 @@ var ErrCategoryMoveCycle = errors.New("cannot move a category under itself or on
 // maxCategoryDepth.
 var ErrCategoryMoveTooDeep = errors.New("move would exceed the maximum category depth of 3")
 
+// ErrCategoryReorderMismatch means a reorder list does not hold every child of
+// the parent exactly once.
+var ErrCategoryReorderMismatch = errors.New("ordered ids must list every child of the parent exactly once")
+
+// nextSiblingOrder is the order index that puts a row last among the children
+// of $2, the row being inserted or moved ($1 for a move) left out. A parent
+// with no other children gives 0.
+const nextSiblingOrder = `COALESCE((SELECT max(order_index) + 1 FROM categories WHERE parent_id IS NOT DISTINCT FROM $2::uuid AND id <> $1), 0)`
+
 // maxCategoryDepth is the deepest a category may sit: a root is depth 1.
 const maxCategoryDepth = 3
 
@@ -78,11 +87,11 @@ func (s *CategoryStore) Create(ctx context.Context, g domain.Category) (domain.C
 	for range codeAssignAttempts {
 		code := NextFreeCode(base, taken)
 		err := s.db.Querier().QueryRow(ctx,
-			`INSERT INTO categories (id, parent_id, name, slug, code)
-			 VALUES ($1, $2, $3, $4, $5)
-			 RETURNING id, created_at, updated_at`,
+			`INSERT INTO categories (id, parent_id, name, slug, code, order_index)
+			 VALUES ($1, $2::uuid, $3, $4, $5, `+nextSiblingOrder+`)
+			 RETURNING id, created_at, updated_at, order_index`,
 			g.ID, parentID, g.Name, g.Slug, code,
-		).Scan(&g.ID, &g.CreatedAt, &g.UpdatedAt)
+		).Scan(&g.ID, &g.CreatedAt, &g.UpdatedAt, &g.OrderIndex)
 		if err == nil {
 			return g, nil
 		}
@@ -252,7 +261,7 @@ func (s *CategoryStore) Get(ctx context.Context, id uuid.UUID) (domain.Category,
 		        ack_triggers, review_cadence, review_date,
 		        exclusion_group_ids IS NOT NULL, COALESCE(exclusion_group_ids, '{}'),
 		        ack_everyone IS NOT NULL, COALESCE(ack_everyone, false),
-		        created_at, updated_at
+		        created_at, updated_at, order_index
 		 FROM categories WHERE id = $1`, id,
 	).Scan(&g.ID, &parentID, &g.Name, &g.Slug,
 		&templateID, &g.DefaultTemplateNone, &workflowID,
@@ -261,7 +270,7 @@ func (s *CategoryStore) Get(ctx context.Context, id uuid.UUID) (domain.Category,
 		&ackTriggers, &reviewCad, &reviewDate,
 		&exclusionSet, &exclusionGroupIDs,
 		&ackEveryoneSet, &ackEveryone,
-		&g.CreatedAt, &g.UpdatedAt)
+		&g.CreatedAt, &g.UpdatedAt, &g.OrderIndex)
 	if err != nil {
 		return domain.Category{}, fmt.Errorf("CategoryStore.Get: %w", err)
 	}
@@ -302,14 +311,14 @@ func (s *CategoryStore) AncestorChain(ctx context.Context, categoryID uuid.UUID)
 		         default_template_id, default_template_none, default_workflow_id,
 		         owners, audience_group_ids, ack_triggers, review_cadence, review_date,
 		         exclusion_group_ids, ack_everyone,
-		         created_at, updated_at, 0 AS depth
+		         created_at, updated_at, order_index, 0 AS depth
 		  FROM categories WHERE id = $1
 		  UNION ALL
 		  SELECT g.id, g.parent_id, g.name, g.slug,
 		         g.default_template_id, g.default_template_none, g.default_workflow_id,
 		         g.owners, g.audience_group_ids, g.ack_triggers, g.review_cadence, g.review_date,
 		         g.exclusion_group_ids, g.ack_everyone,
-		         g.created_at, g.updated_at, c.depth + 1
+		         g.created_at, g.updated_at, g.order_index, c.depth + 1
 		  FROM categories g JOIN chain c ON g.id = c.parent_id
 		)
 		SELECT id, parent_id, name, slug,
@@ -319,7 +328,7 @@ func (s *CategoryStore) AncestorChain(ctx context.Context, categoryID uuid.UUID)
 		       ack_triggers, review_cadence, review_date,
 		       exclusion_group_ids IS NOT NULL, COALESCE(exclusion_group_ids, '{}'),
 		       ack_everyone IS NOT NULL, COALESCE(ack_everyone, false),
-		       created_at, updated_at
+		       created_at, updated_at, order_index
 		FROM chain
 		ORDER BY depth ASC`, categoryID)
 	if err != nil {
@@ -339,16 +348,16 @@ func (s *CategoryStore) ListChildren(ctx context.Context, parentID uuid.UUID) ([
 	                     ack_triggers, review_cadence, review_date,
 	                     exclusion_group_ids IS NOT NULL, COALESCE(exclusion_group_ids, '{}'),
 	                     ack_everyone IS NOT NULL, COALESCE(ack_everyone, false),
-	                     created_at, updated_at
+	                     created_at, updated_at, order_index
 	              FROM categories `
 	var (
 		query string
 		args  []any
 	)
 	if parentID == uuid.Nil {
-		query = base + `WHERE parent_id IS NULL ORDER BY slug`
+		query = base + `WHERE parent_id IS NULL ORDER BY order_index, name, id`
 	} else {
-		query = base + `WHERE parent_id = $1 ORDER BY slug`
+		query = base + `WHERE parent_id = $1 ORDER BY order_index, name, id`
 		args = append(args, parentID)
 	}
 	rows, err := s.db.Querier().Query(ctx, query, args...)
@@ -564,7 +573,7 @@ func (s *CategoryStore) MoveCategory(ctx context.Context, categoryID uuid.UUID, 
 			parentParam = newParentID
 		}
 		if _, err := tx.Exec(ctx,
-			`UPDATE categories SET parent_id = $2, updated_at = now() WHERE id = $1`,
+			`UPDATE categories SET parent_id = $2::uuid, order_index = `+nextSiblingOrder+`, updated_at = now() WHERE id = $1`,
 			categoryID, parentParam,
 		); err != nil {
 			if isUniqueViolation(err) {
@@ -590,6 +599,77 @@ func (s *CategoryStore) MoveCategory(ctx context.Context, categoryID uuid.UUID, 
 		return domain.Category{}, 0, fmt.Errorf("CategoryStore.MoveCategory reload: %w", err)
 	}
 	return g, len(subtreeIDs), nil
+}
+
+// ReorderChildren sets the sibling order of a parent's children from their
+// position in orderedIDs; a nil parentID reorders the roots. The list must hold
+// every child of the parent exactly once, else it returns
+// ErrCategoryReorderMismatch and changes nothing. An unknown parent is
+// ErrCategoryNotFound. It returns the children in the new order.
+func (s *CategoryStore) ReorderChildren(ctx context.Context, parentID uuid.UUID, orderedIDs []uuid.UUID) ([]domain.Category, error) {
+	var parent *uuid.UUID
+	if parentID != uuid.Nil {
+		parent = &parentID
+	}
+	err := s.db.RunInTx(ctx, func(tx pgx.Tx) error {
+		if parent != nil {
+			var exists bool
+			if err := tx.QueryRow(ctx,
+				`SELECT EXISTS (SELECT 1 FROM categories WHERE id = $1)`, *parent).Scan(&exists); err != nil {
+				return fmt.Errorf("CategoryStore.ReorderChildren parent: %w", err)
+			}
+			if !exists {
+				return fmt.Errorf("CategoryStore.ReorderChildren %s: %w", parentID, ErrCategoryNotFound)
+			}
+		}
+
+		// Lock the children so a concurrent create, move or delete waits.
+		rows, err := tx.Query(ctx,
+			`SELECT id FROM categories WHERE parent_id IS NOT DISTINCT FROM $1::uuid FOR UPDATE`, parent)
+		if err != nil {
+			return fmt.Errorf("CategoryStore.ReorderChildren children: %w", err)
+		}
+		children := map[uuid.UUID]struct{}{}
+		for rows.Next() {
+			var id uuid.UUID
+			if err := rows.Scan(&id); err != nil {
+				rows.Close()
+				return fmt.Errorf("CategoryStore.ReorderChildren scan: %w", err)
+			}
+			children[id] = struct{}{}
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return fmt.Errorf("CategoryStore.ReorderChildren children rows: %w", err)
+		}
+
+		if len(orderedIDs) != len(children) {
+			return fmt.Errorf("CategoryStore.ReorderChildren: %d ids for %d children: %w",
+				len(orderedIDs), len(children), ErrCategoryReorderMismatch)
+		}
+		seen := make(map[uuid.UUID]struct{}, len(orderedIDs))
+		for _, id := range orderedIDs {
+			if _, ok := children[id]; !ok {
+				return fmt.Errorf("CategoryStore.ReorderChildren %s is not a child: %w", id, ErrCategoryReorderMismatch)
+			}
+			if _, dup := seen[id]; dup {
+				return fmt.Errorf("CategoryStore.ReorderChildren %s listed twice: %w", id, ErrCategoryReorderMismatch)
+			}
+			seen[id] = struct{}{}
+		}
+
+		if _, err := tx.Exec(ctx, `
+			UPDATE categories c SET order_index = o.pos::int - 1
+			FROM unnest($1::uuid[]) WITH ORDINALITY AS o(id, pos)
+			WHERE c.id = o.id`, orderedIDs); err != nil {
+			return fmt.Errorf("CategoryStore.ReorderChildren update: %w", err)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return s.ListChildren(ctx, parentID)
 }
 
 // SetGovernance writes a category's governance columns and returns the
@@ -655,14 +735,14 @@ func (s *CategoryStore) Subtree(ctx context.Context, rootID uuid.UUID) ([]domain
 		         default_template_id, default_template_none, default_workflow_id,
 		         owners, audience_group_ids, ack_triggers, review_cadence, review_date,
 		         exclusion_group_ids, ack_everyone,
-		         created_at, updated_at
+		         created_at, updated_at, order_index
 		  FROM categories WHERE id = $1
 		  UNION ALL
 		  SELECT g.id, g.parent_id, g.name, g.slug,
 		         g.default_template_id, g.default_template_none, g.default_workflow_id,
 		         g.owners, g.audience_group_ids, g.ack_triggers, g.review_cadence, g.review_date,
 		         g.exclusion_group_ids, g.ack_everyone,
-		         g.created_at, g.updated_at
+		         g.created_at, g.updated_at, g.order_index
 		  FROM categories g JOIN tree t ON g.parent_id = t.id
 		)
 		SELECT id, parent_id, name, slug,
@@ -672,7 +752,7 @@ func (s *CategoryStore) Subtree(ctx context.Context, rootID uuid.UUID) ([]domain
 		       ack_triggers, review_cadence, review_date,
 		       exclusion_group_ids IS NOT NULL, COALESCE(exclusion_group_ids, '{}'),
 		       ack_everyone IS NOT NULL, COALESCE(ack_everyone, false),
-		       created_at, updated_at
+		       created_at, updated_at, order_index
 		FROM tree`, rootID)
 	if err != nil {
 		return nil, fmt.Errorf("CategoryStore.Subtree: %w", err)
@@ -763,7 +843,7 @@ func scanCategories(rows interface {
 			&ackTriggers, &reviewCad, &reviewDate,
 			&exclusionSet, &exclusionGroupIDs,
 			&ackEveryoneSet, &ackEveryone,
-			&g.CreatedAt, &g.UpdatedAt); err != nil {
+			&g.CreatedAt, &g.UpdatedAt, &g.OrderIndex); err != nil {
 			return nil, err
 		}
 		if parentID != nil {
