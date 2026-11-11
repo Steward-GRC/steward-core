@@ -1,0 +1,157 @@
+// Copyright 2026 The Steward Authors
+// SPDX-License-Identifier: Apache-2.0
+
+syntax = "proto3";
+
+package steward.core.v1;
+
+import "steward/core/v1/contact.proto";
+import "steward/core/v1/definition_library.proto";
+import "steward/core/v1/reference.proto";
+
+option go_package = "github.com/Steward-GRC/steward-core/gen/go/steward/core/v1;corev1";
+
+// RelationshipType is how one policy relates to another, with the type the
+// other side of the link reads as. The list is fixed: five pairs, each the
+// inverse of the other.
+message RelationshipType {
+  // A stable id such as RELATED_TO.
+  string id = 1;
+  // Reads "this policy <label> the other", for example "is related to".
+  string label = 2;
+  string inverse_id = 3;
+  string inverse_label = 4;
+}
+
+message ListRelationshipTypesRequest {}
+
+message ListRelationshipTypesResponse {
+  repeated RelationshipType types = 1;
+}
+
+// RelatedDirection says which side of a link a version is on.
+enum RelatedDirection {
+  RELATED_DIRECTION_UNSPECIFIED = 0;
+  // This version names the other policy.
+  RELATED_DIRECTION_OUTGOING = 1;
+  // The other policy's published version names this one; the type and label
+  // read as the inverse.
+  RELATED_DIRECTION_INCOMING = 2;
+}
+
+// RelatedVersionLink is one related item of a version, with the other policy's
+// current number and title.
+message RelatedVersionLink {
+  string policy_id = 1;
+  string number = 2;
+  string title = 3;
+  string relation_type = 4;
+  string label = 5;
+  RelatedDirection direction = 6;
+}
+
+// VersionLinks is what one policy version links to from the libraries. The
+// library items are not versioned; the links are.
+message VersionLinks {
+  string policy_version_id = 1;
+  // True when the version holds the draft slot (draft or in review). This is
+  // status only: the caller's permission to edit is the gateway's to check.
+  bool editable = 2;
+  // Alphabetical by term, case-insensitive.
+  repeated DefinitionEntry definitions = 3;
+  // The version's own links in the order they were set, then the incoming
+  // links from the published version of every other policy that names this
+  // version's policy.
+  repeated RelatedVersionLink related = 4;
+  // In the order they were set.
+  repeated Reference references = 5;
+  // In the order they were set.
+  repeated ContactBlock contacts = 6;
+}
+
+message GetVersionLinksRequest {
+  string policy_version_id = 1;
+}
+
+message GetVersionLinksResponse {
+  VersionLinks links = 1;
+}
+
+// SetVersionReferencesRequest replaces the version's references with
+// reference_ids, in that order. An empty list clears them.
+message SetVersionReferencesRequest {
+  string policy_version_id = 1;
+  repeated string reference_ids = 2;
+  // The user making the change, for the audit trail.
+  string actor_user_id = 3;
+}
+
+message SetVersionReferencesResponse {
+  VersionLinks links = 1;
+}
+
+// SetVersionContactBlocksRequest replaces the version's contact blocks, in the
+// order given.
+message SetVersionContactBlocksRequest {
+  string policy_version_id = 1;
+  repeated string contact_block_ids = 2;
+  string actor_user_id = 3;
+}
+
+message SetVersionContactBlocksResponse {
+  VersionLinks links = 1;
+}
+
+// SetVersionDefinitionsRequest replaces the version's definitions. They carry
+// no order; reads list them alphabetically.
+message SetVersionDefinitionsRequest {
+  string policy_version_id = 1;
+  repeated string definition_ids = 2;
+  string actor_user_id = 3;
+}
+
+message SetVersionDefinitionsResponse {
+  VersionLinks links = 1;
+}
+
+// RelatedLinkInput is one related item to set: another policy and how this
+// version relates to it.
+message RelatedLinkInput {
+  string policy_id = 1;
+  // An id from ListRelationshipTypes.
+  string relation_type = 2;
+}
+
+// SetVersionRelatedRequest replaces the version's own related items, in the
+// order given. Incoming links are made by the other policy and cannot be set
+// here.
+message SetVersionRelatedRequest {
+  string policy_version_id = 1;
+  repeated RelatedLinkInput links = 2;
+  string actor_user_id = 3;
+}
+
+message SetVersionRelatedResponse {
+  VersionLinks links = 1;
+}
+
+// VersionLinkService keeps the library links of each policy version:
+// definitions, references, contact blocks and related policies. A link changes
+// only while the version holds the draft slot (draft or in review), which
+// FAILED_PRECONDITION enforces; linking never creates a draft. A new draft
+// starts with a copy of the links of the version it follows (see
+// PolicyService.SaveDraft).
+service VersionLinkService {
+  rpc ListRelationshipTypes(ListRelationshipTypesRequest) returns (ListRelationshipTypesResponse);
+  // NOT_FOUND for an unknown version. Open to any version, whatever its status.
+  rpc GetVersionLinks(GetVersionLinksRequest) returns (GetVersionLinksResponse);
+  // Each Set call is a full replace of one kind of link and returns the
+  // version's links after the change. INVALID_ARGUMENT for an id named twice,
+  // an unknown relationship type, a link to the version's own policy or a
+  // repeated (policy, type); NOT_FOUND for an item or policy that does not
+  // exist; FAILED_PRECONDITION for a version that is not editable.
+  rpc SetVersionReferences(SetVersionReferencesRequest) returns (SetVersionReferencesResponse);
+  rpc SetVersionContactBlocks(SetVersionContactBlocksRequest) returns (SetVersionContactBlocksResponse);
+  rpc SetVersionDefinitions(SetVersionDefinitionsRequest) returns (SetVersionDefinitionsResponse);
+  rpc SetVersionRelated(SetVersionRelatedRequest) returns (SetVersionRelatedResponse);
+}

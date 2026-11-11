@@ -62,7 +62,8 @@ type PolicyStorer interface {
 }
 
 // appendixCopier copies a published version's appendices into a freshly created
-// draft. Satisfied by *store.AppendixStore.
+// draft. Satisfied by *store.AppendixStore. The library links of a version
+// (*store.VersionLinkStore) are copied through the same shape.
 type appendixCopier interface {
 	CopyForward(ctx context.Context, fromVersionID, toVersionID uuid.UUID) error
 }
@@ -79,6 +80,8 @@ type PolicyHandler struct {
 	lifecyclePub *lifecycle.Emitter
 	// appendixCopier copies appendices into a new draft. nil skips the copy.
 	appendixCopier appendixCopier
+	// linkCopier copies the library links into a new draft. nil skips the copy.
+	linkCopier appendixCopier
 	// versionCache holds published versions only. nil turns caching off.
 	versionCache versionCache
 }
@@ -110,6 +113,13 @@ func (h *PolicyHandler) WithLifecycleEmitter(em *lifecycle.Emitter) *PolicyHandl
 // WithAppendixCopier sets the appendix copy into a newly created draft.
 func (h *PolicyHandler) WithAppendixCopier(c appendixCopier) *PolicyHandler {
 	h.appendixCopier = c
+	return h
+}
+
+// WithLinkCopier sets the copy of a version's library links into a newly
+// created draft (issue #70).
+func (h *PolicyHandler) WithLinkCopier(c appendixCopier) *PolicyHandler {
+	h.linkCopier = c
 	return h
 }
 
@@ -477,23 +487,22 @@ func (h *PolicyHandler) SaveDraft(ctx context.Context, req *corev1.SaveDraftRequ
 	}
 	logger.Ctx(ctx).Debug("draft saved", log.F("policy_id", pid.String()), log.F("version_id", pv.ID.String()),
 		log.F("status", string(pv.Status)), log.F("inserted", res.Inserted), log.F("content_changed", res.ContentChanged))
-	// A new draft starts with a copy of the appendices of the rejected version when a rejection is
-	// the latest outcome, else of the published version.
-	if res.Inserted && h.appendixCopier != nil {
+	// A new draft starts with a copy of the appendices and the library links of the rejected version
+	// when a rejection is the latest outcome, else of the published version.
+	if res.Inserted && (h.appendixCopier != nil || h.linkCopier != nil) {
 		src, serr := h.store.AppendixSource(ctx, pid)
 		if serr != nil {
 			logger.Ctx(ctx).Warn("appendix source lookup failed", log.F("policy_id", pid.String()), log.F("error", serr.Error()))
 			return nil, status.Errorf(codes.Internal, "find appendix source: %v", serr)
 		}
 		if src == uuid.Nil {
-			logger.Ctx(ctx).Debug("no appendices to copy forward", log.F("policy_id", pid.String()), log.F("version_id", pv.ID.String()))
+			logger.Ctx(ctx).Debug("nothing to copy forward", log.F("policy_id", pid.String()), log.F("version_id", pv.ID.String()))
 		} else {
-			logger.Ctx(ctx).Debug("copying appendices forward", log.F("policy_id", pid.String()),
-				log.F("from_version_id", src.String()), log.F("to_version_id", pv.ID.String()))
-			if cerr := h.appendixCopier.CopyForward(ctx, src, pv.ID); cerr != nil {
-				logger.Ctx(ctx).Warn("copy appendices forward failed", log.F("policy_id", pid.String()),
-					log.F("from_version_id", src.String()), log.F("to_version_id", pv.ID.String()), log.F("error", cerr.Error()))
+			if cerr := copyForward(ctx, "appendices", h.appendixCopier, pid, src, pv.ID); cerr != nil {
 				return nil, status.Errorf(codes.Internal, "copy appendices forward: %v", cerr)
+			}
+			if cerr := copyForward(ctx, "links", h.linkCopier, pid, src, pv.ID); cerr != nil {
+				return nil, status.Errorf(codes.Internal, "copy links forward: %v", cerr)
 			}
 		}
 	}
@@ -936,12 +945,31 @@ func (h *PolicyHandler) ensureDraft(ctx context.Context, p domain.Policy, actor 
 	if err != nil {
 		return uuid.Nil, err
 	}
-	if res.Inserted && h.appendixCopier != nil {
-		if err := h.appendixCopier.CopyForward(ctx, p.CurrentPublishedVersionID, pv.ID); err != nil {
+	if res.Inserted {
+		if err := copyForward(ctx, "appendices", h.appendixCopier, p.ID, p.CurrentPublishedVersionID, pv.ID); err != nil {
+			return uuid.Nil, err
+		}
+		if err := copyForward(ctx, "links", h.linkCopier, p.ID, p.CurrentPublishedVersionID, pv.ID); err != nil {
 			return uuid.Nil, err
 		}
 	}
 	return pv.ID, nil
+}
+
+// copyForward copies what a version carries (kind names it in the log) into a new draft through c.
+// A nil copier is a no-op.
+func copyForward(ctx context.Context, kind string, c appendixCopier, policyID, from, to uuid.UUID) error {
+	if c == nil {
+		return nil
+	}
+	logger.Ctx(ctx).Debug("copying forward", log.F("kind", kind), log.F("policy_id", policyID.String()),
+		log.F("from_version_id", from.String()), log.F("to_version_id", to.String()))
+	if err := c.CopyForward(ctx, from, to); err != nil {
+		logger.Ctx(ctx).Warn("copy forward failed", log.F("kind", kind), log.F("policy_id", policyID.String()),
+			log.F("from_version_id", from.String()), log.F("to_version_id", to.String()), log.F("error", err.Error()))
+		return err
+	}
+	return nil
 }
 
 // MovePolicy handles PolicyService.MovePolicy. It renumbers the policy from the new category's

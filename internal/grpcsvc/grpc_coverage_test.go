@@ -32,6 +32,11 @@ func TestEveryGRPCRPCIsImplemented(t *testing.T) {
 			srv:     reflect.ValueOf(corev1.AppendixServiceServer(&AppendixHandler{})),
 		},
 		{
+			service: "VersionLinkService",
+			ifaceT:  reflect.TypeFor[corev1.VersionLinkServiceServer](),
+			srv:     reflect.ValueOf(corev1.VersionLinkServiceServer(&VersionLinkHandler{})),
+		},
+		{
 			service: "PolicyAppendixService",
 			ifaceT:  reflect.TypeFor[corev1.PolicyAppendixServiceServer](),
 			srv:     reflect.ValueOf(corev1.PolicyAppendixServiceServer(&PolicyAppendixHandler{})),
