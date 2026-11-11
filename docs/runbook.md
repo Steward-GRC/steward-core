@@ -17,7 +17,7 @@ is reused for 5 seconds.
 | `postgres` | yes | Not ready: nothing can be read or written. |
 | `rabbitmq` | yes | Not ready: writes can't be audited. |
 | `valkey` | no, reported when `REDIS_ADDR` is set | Degraded, still ready: reads go to Postgres. If Valkey was unreachable at start-up, the cache stays off and reports degraded until a restart. |
-| `objectstore` | no, reported when `S3_ENDPOINT` is set | Degraded, still ready: only editor images fail. |
+| `objectstore` | no, reported when `S3_ENDPOINT` is set | Degraded, still ready: only editor images and files fail. |
 | `jwks` | yes, while service-to-service authentication is on | Not ready: no caller can be verified. A good fetch keeps it up for a minute; a failure is retried on the next probe. The verifier keeps its last good key set either way. |
 | `workloadauth` | no, reported only with `WORKLOAD_AUTH=disabled` | Always degraded: every caller that reaches the port is served. Never run like this outside local development. |
 
@@ -48,5 +48,5 @@ is reused for 5 seconds.
 
 ## Backups
 
-Back up Postgres and `CORE_SETTINGS_KEY` together. Editor images live in the object store bucket;
+Back up Postgres and `CORE_SETTINGS_KEY` together. Editor images and files live in the object store bucket;
 back it up with the database, since `editor_assets` rows point at its keys.

@@ -142,7 +142,7 @@ func run(ctx context.Context, logger log.Logger) error {
 		s3, err := s3store.New(s3store.Config{
 			Endpoint: cfg.S3.Endpoint, Region: cfg.S3.Region, Bucket: cfg.S3.Bucket,
 			AccessKeyID: cfg.S3.AccessKey, SecretAccessKey: cfg.S3.SecretKey, PathStyle: cfg.S3.PathStyle,
-			MaxObjectSize: domain.MaxAssetBytes,
+			MaxObjectSize: domain.MaxFileBytes,
 		})
 		if err != nil {
 			return fmt.Errorf("object store: %w", err)
@@ -152,13 +152,13 @@ func run(ctx context.Context, logger log.Logger) error {
 		}
 		objects = s3
 		deps.Objects = s3
-		logger.Info("editor images on", log.F("bucket", cfg.S3.Bucket))
+		logger.Info("editor assets on", log.F("bucket", cfg.S3.Bucket))
 	} else {
-		logger.Info("S3_ENDPOINT is not set: editor images are off")
+		logger.Info("S3_ENDPOINT is not set: editor assets are off")
 	}
-	assetH := grpcsvc.NewAssetHandler(store.NewAssetStore(db), nil, auditor)
+	assetH := grpcsvc.NewAssetHandler(store.NewAssetStore(db), nil, auditor).WithSettings(store.NewAssetSettingsStore(db))
 	if objects != nil {
-		assetH = grpcsvc.NewAssetHandler(store.NewAssetStore(db), objects, auditor)
+		assetH = grpcsvc.NewAssetHandler(store.NewAssetStore(db), objects, auditor).WithSettings(store.NewAssetSettingsStore(db))
 	}
 	var auth *server.Auth
 	if cfg.WorkloadAuthEnabled {

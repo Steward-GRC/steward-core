@@ -15,7 +15,7 @@ stubs committed in `gen/go`. Access to every RPC is enforced at the gateway; cor
 | `ReviewService` | Inline review threads on a policy version, each with one approver, and suggested changes with counters and outcomes on a thread; the gateway passes `actor_user_id` and `actor_side`. |
 | `SettingsService` | The global settings and the keyless email-service status. |
 | `EmailServiceSecretService` | Internal only: the email-service configuration with its key, for the service that sends mail. The gateway never serves it. |
-| `AssetService` | Editor images. |
+| `AssetService` | Editor images and files: upload, get, and the admin setting of which kinds of file are accepted. |
 
 The server also serves `grpc.health.v1` and reflection. On `grpc.health.v1`, `liveness` reports the
 process only, and the empty name and `readiness` fail while Postgres or RabbitMQ is down. Every
