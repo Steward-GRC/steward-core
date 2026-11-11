@@ -437,3 +437,32 @@ func TestReviewStoreDeleteRemovesTheSuggestion(t *testing.T) {
 		`SELECT (SELECT count(*) FROM review_suggestions) + (SELECT count(*) FROM review_suggestion_rounds)`).Scan(&n))
 	require.Zero(t, n)
 }
+
+// GetThread backs the gateway's by-id check: it returns the one thread asked
+// for, with its version id and every message oldest first.
+func TestReviewStoreGetReturnsOneThreadWithItsMessagesInOrder(t *testing.T) {
+	pool := newTestDB(t)
+	s := store.NewReviewStore(pool)
+	ctx := context.Background()
+	vid, _ := reviewVersion(t, pool)
+	charlie, bob := uuid.New(), uuid.New()
+
+	want, err := s.CreateThread(ctx, newThread(t, vid, charlie, charlie, domain.ReviewSideReviewer, "first"))
+	require.NoError(t, err)
+	_, err = s.CreateThread(ctx, newThread(t, vid, charlie, charlie, domain.ReviewSideReviewer, "other thread"))
+	require.NoError(t, err)
+	for _, body := range []string{"second", "third"} {
+		m, merr := domain.NewReviewMessage(domain.DefaultReviewLimits, bob, body)
+		require.NoError(t, merr)
+		_, err = s.AddMessage(ctx, want.ID, m)
+		require.NoError(t, err)
+	}
+
+	got, err := s.GetThread(ctx, want.ID)
+	require.NoError(t, err)
+	require.Equal(t, want.ID, got.ID)
+	require.Equal(t, vid, got.PolicyVersionID)
+	require.Equal(t, charlie, got.ApproverUserID)
+	require.Len(t, got.Messages, 3)
+	require.Equal(t, []string{"first", "second", "third"}, []string{got.Messages[0].Body, got.Messages[1].Body, got.Messages[2].Body})
+}

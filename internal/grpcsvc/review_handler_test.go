@@ -829,3 +829,50 @@ func TestSuggestionStoreFaultIsUnavailableAndLeaksNothing(t *testing.T) {
 	require.Error(t, err)
 	require.NotContains(t, err.Error(), "six years")
 }
+
+// GetReviewThread reads one thread by id so the gateway can check a thread-only mutation.
+func TestGetReviewThreadReturnsTheThreadWithItsMessages(t *testing.T) {
+	f := newReviewFixture(t)
+	th := f.charlieStarts(t)
+	_, err := f.h.ReplyReviewThread(context.Background(), &corev1.ReplyReviewThreadRequest{
+		ActorUserId: f.bob, ActorSide: corev1.ReviewSide_REVIEW_SIDE_AUTHOR, ThreadId: th.GetId(), Body: "Seven is the rule.",
+	})
+	require.NoError(t, err)
+	before := len(f.audit.evs)
+
+	resp, err := f.h.GetReviewThread(context.Background(), &corev1.GetReviewThreadRequest{ThreadId: th.GetId()})
+	require.NoError(t, err)
+	got := resp.GetThread()
+	require.Equal(t, th.GetId(), got.GetId())
+	require.Equal(t, f.version, got.GetPolicyVersionId())
+	require.Equal(t, f.charlie, got.GetApproverUserId())
+	require.Equal(t, f.charlie, got.GetCreatedBy())
+	require.Equal(t, "seven years", got.GetQuote())
+	require.Equal(t, int32(2), got.GetOccurrence())
+	require.Len(t, got.GetMessages(), 2)
+	require.Equal(t, "What is this?", got.GetMessages()[0].GetBody())
+	require.Equal(t, "Seven is the rule.", got.GetMessages()[1].GetBody())
+	require.Equal(t, before, len(f.audit.evs), "a read emits no audit event")
+}
+
+func TestGetReviewThreadOnAnUnknownThreadIsNotFound(t *testing.T) {
+	f := newReviewFixture(t)
+	_, err := f.h.GetReviewThread(context.Background(), &corev1.GetReviewThreadRequest{ThreadId: uuid.NewString()})
+	requireCode(t, err, codes.NotFound)
+}
+
+func TestGetReviewThreadRefusesABlankOrMalformedId(t *testing.T) {
+	f := newReviewFixture(t)
+	for _, id := range []string{"", "   ", "nope", "1234"} {
+		_, err := f.h.GetReviewThread(context.Background(), &corev1.GetReviewThreadRequest{ThreadId: id})
+		requireCode(t, err, codes.InvalidArgument)
+	}
+}
+
+func TestGetReviewThreadStoreFaultIsCodedNotLeaked(t *testing.T) {
+	f := newReviewFixture(t)
+	f.backend.fail = errors.New("pq: secret detail")
+	_, err := f.h.GetReviewThread(context.Background(), &corev1.GetReviewThreadRequest{ThreadId: uuid.NewString()})
+	require.Error(t, err)
+	require.NotContains(t, err.Error(), "secret detail")
+}
