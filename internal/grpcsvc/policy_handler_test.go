@@ -163,7 +163,7 @@ func (f *fakePolicyStore) UpdateDraftContent(_ context.Context, policyVersionID 
 	if !ok {
 		return fmt.Errorf("not found")
 	}
-	if pv.Status != domain.PolicyVersionStatusDraft {
+	if !pv.Status.HoldsDraftSlot() {
 		return fmt.Errorf("not draft")
 	}
 	pv.ContentJSON = contentJSON
