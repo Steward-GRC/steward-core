@@ -1044,6 +1044,31 @@ func (s *PolicyStore) SetTemplate(ctx context.Context, policyID, templateID uuid
 	return s.GetPolicy(ctx, policyID)
 }
 
+// ResetStartingDraft blanks a draft and pins it to templateVersionID, or to no template when that
+// is uuid.Nil. It is for the untouched starting draft only: the caller has checked there is no
+// author text. A row that is missing or not a draft returns pgx.ErrNoRows, so a version in review
+// is never rewritten.
+func (s *PolicyStore) ResetStartingDraft(ctx context.Context, draftID, templateVersionID uuid.UUID) error {
+	var tvPtr *uuid.UUID
+	if templateVersionID != uuid.Nil {
+		tvPtr = &templateVersionID
+	}
+	tag, err := s.db.Querier().Exec(ctx,
+		`UPDATE policy_versions
+		    SET template_version_id = $2,
+		        content             = $3::jsonb
+		  WHERE id = $1 AND status = 'draft'`,
+		draftID, tvPtr, initialDraftContent,
+	)
+	if err != nil {
+		return fmt.Errorf("PolicyStore.ResetStartingDraft: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("PolicyStore.ResetStartingDraft %s: %w", draftID, pgx.ErrNoRows)
+	}
+	return nil
+}
+
 // ListAllPolicies returns every policy, unordered, for the obligation
 // resolution. It doesn't filter by document type: each policy carries its
 // type and the obligation path skips procedures.
