@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 
+	postgres "github.com/Bugs5382/go-postgres"
 	"github.com/Steward-GRC/steward-core/internal/domain"
 	"github.com/Steward-GRC/steward-core/internal/store"
 )
@@ -22,6 +23,7 @@ const reviewedText = `{"root":{"type":"root","children":[{"type":"paragraph","ch
 
 type statusFixture struct {
 	t   *testing.T
+	db  *postgres.DB
 	ps  *store.PolicyStore
 	p   domain.Policy
 	tv  domain.TemplateVersion
@@ -41,7 +43,7 @@ func newStatusFixture(t *testing.T) *statusFixture {
 	if err != nil {
 		t.Fatalf("CreatePolicy: %v", err)
 	}
-	return &statusFixture{t: t, ps: ps, p: p, tv: tv, ctx: ctx}
+	return &statusFixture{t: t, db: pool, ps: ps, p: p, tv: tv, ctx: ctx}
 }
 
 // save upserts the policy's draft with the given content.

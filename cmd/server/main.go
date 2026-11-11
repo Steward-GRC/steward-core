@@ -223,6 +223,7 @@ func run(ctx context.Context, logger log.Logger) error {
 		corev1.RegisterAssetServiceServer(s, assetH)
 		corev1.RegisterReviewServiceServer(s, grpcsvc.NewReviewHandler(store.NewReviewStore(db), auditor,
 			domain.ReviewLimits{BodyMax: cfg.ReviewBodyMaxChars, QuoteMax: cfg.ReviewQuoteMaxChars}))
+		corev1.RegisterReviewSnapshotServiceServer(s, grpcsvc.NewReviewSnapshotHandler(store.NewReviewSnapshotStore(db), templates, auditor))
 	})
 	cancel()
 	return errors.Join(err, <-probesDone)
