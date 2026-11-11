@@ -50,11 +50,9 @@ func (s *ReferenceStore) ListReferences(ctx context.Context, includeArchived boo
 	}
 	rows, err := s.db.Querier().Query(ctx, `
 		SELECT r.id, r.label, r.kind, r.clause, r.body, r.url, r.archived, r.created_by_user_id, r.created_at,
-		       COUNT(pr.reference_id) AS used_by
+		       `+usedByReferences("r")+` AS used_by
 		FROM "references" r
-		LEFT JOIN policy_references pr ON pr.reference_id = r.id
 		`+where+`
-		GROUP BY r.id
 		ORDER BY r.label`)
 	if err != nil {
 		return nil, err
@@ -120,7 +118,8 @@ func (s *ReferenceStore) DeleteReference(ctx context.Context, id uuid.UUID) erro
 	return s.db.RunInTx(ctx, func(tx pgx.Tx) error {
 		var usedBy int
 		if err := tx.QueryRow(ctx,
-			`SELECT COUNT(*) FROM policy_references WHERE reference_id=$1`, id).Scan(&usedBy); err != nil {
+			`SELECT (SELECT COUNT(*) FROM policy_references WHERE reference_id=$1)
+			      + (SELECT COUNT(*) FROM policy_version_references WHERE reference_id=$1)`, id).Scan(&usedBy); err != nil {
 			return err
 		}
 		if usedBy > 0 {

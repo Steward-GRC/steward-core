@@ -41,11 +41,9 @@ func (s *ContactStore) ListBlocks(ctx context.Context, includeArchived bool) ([]
 	}
 	rows, err := s.db.Querier().Query(ctx, `
 		SELECT cb.id, cb.label, cb.name, cb.role, cb.department, cb.email, cb.phone, cb.hours, cb.notes, cb.archived,
-		       COUNT(pcb.id) AS used_by
+		       `+usedByContacts("cb")+` AS used_by
 		FROM contact_blocks cb
-		LEFT JOIN policy_contact_blocks pcb ON pcb.contact_block_id = cb.id
 		`+where+`
-		GROUP BY cb.id
 		ORDER BY cb.label`)
 	if err != nil {
 		return nil, err
