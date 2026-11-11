@@ -40,6 +40,7 @@ type PolicyStorer interface {
 	ListPolicies(ctx context.Context, categoryID uuid.UUID, includeDescendants bool, docType domain.DocumentType) ([]domain.Policy, error)
 	GetPolicyVersion(ctx context.Context, id uuid.UUID) (domain.PolicyVersion, error)
 	ListPublishedVersions(ctx context.Context, policyID uuid.UUID) ([]domain.PolicyVersion, error)
+	AppendixSource(ctx context.Context, policyID uuid.UUID) (uuid.UUID, error)
 	UpsertDraft(ctx context.Context, pv domain.PolicyVersion) (domain.PolicyVersion, store.UpsertDraftResult, error)
 	UpdateDraftContent(ctx context.Context, policyVersionID uuid.UUID, contentJSON string) error
 	PublishDraft(ctx context.Context, policyID, actorUserID uuid.UUID) (domain.PolicyVersion, error)
@@ -470,10 +471,22 @@ func (h *PolicyHandler) SaveDraft(ctx context.Context, req *corev1.SaveDraftRequ
 	}
 	logger.Ctx(ctx).Debug("draft saved", log.F("policy_id", pid.String()), log.F("version_id", pv.ID.String()),
 		log.F("status", string(pv.Status)), log.F("inserted", res.Inserted), log.F("content_changed", res.ContentChanged))
-	// A new draft starts with a copy of the published version's appendices.
+	// A new draft starts with a copy of the appendices of the rejected version when a rejection is
+	// the latest outcome, else of the published version.
 	if res.Inserted && h.appendixCopier != nil {
-		if pol, gerr := h.store.GetPolicy(ctx, pid); gerr == nil && pol.CurrentPublishedVersionID != uuid.Nil {
-			if cerr := h.appendixCopier.CopyForward(ctx, pol.CurrentPublishedVersionID, pv.ID); cerr != nil {
+		src, serr := h.store.AppendixSource(ctx, pid)
+		if serr != nil {
+			logger.Ctx(ctx).Warn("appendix source lookup failed", log.F("policy_id", pid.String()), log.F("error", serr.Error()))
+			return nil, status.Errorf(codes.Internal, "find appendix source: %v", serr)
+		}
+		if src == uuid.Nil {
+			logger.Ctx(ctx).Debug("no appendices to copy forward", log.F("policy_id", pid.String()), log.F("version_id", pv.ID.String()))
+		} else {
+			logger.Ctx(ctx).Debug("copying appendices forward", log.F("policy_id", pid.String()),
+				log.F("from_version_id", src.String()), log.F("to_version_id", pv.ID.String()))
+			if cerr := h.appendixCopier.CopyForward(ctx, src, pv.ID); cerr != nil {
+				logger.Ctx(ctx).Warn("copy appendices forward failed", log.F("policy_id", pid.String()),
+					log.F("from_version_id", src.String()), log.F("to_version_id", pv.ID.String()), log.F("error", cerr.Error()))
 				return nil, status.Errorf(codes.Internal, "copy appendices forward: %v", cerr)
 			}
 		}

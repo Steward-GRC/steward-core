@@ -73,6 +73,9 @@ type fakePolicyStore struct {
 	// reassignAuthorGrants is the author-grant count ReassignUserPolicies reports; the fake holds
 	// no rules.
 	reassignAuthorGrants int
+	// appendixSource is the canned AppendixSource answer per policy; a policy with none falls back to
+	// its published pointer, the way a policy with no rejection does in the real store.
+	appendixSource map[uuid.UUID]uuid.UUID
 }
 
 func newFakePolicyStore() *fakePolicyStore {
@@ -279,6 +282,13 @@ func (f *fakePolicyStore) SetProposedTitle(_ context.Context, policyVersionID uu
 
 func (f *fakePolicyStore) IsTemplateUpdateAvailable(_ context.Context, _, _ uuid.UUID) (bool, error) {
 	return f.templateUpdateAvailable, f.templateUpdateErr
+}
+
+func (f *fakePolicyStore) AppendixSource(_ context.Context, policyID uuid.UUID) (uuid.UUID, error) {
+	if id, ok := f.appendixSource[policyID]; ok {
+		return id, nil
+	}
+	return f.policies[policyID].CurrentPublishedVersionID, nil
 }
 
 func (f *fakePolicyStore) ListPublishedVersions(_ context.Context, policyID uuid.UUID) ([]domain.PolicyVersion, error) {
@@ -2811,6 +2821,51 @@ func TestSaveDraft_CopiesAppendicesForwardOnce(t *testing.T) {
 	}
 	if len(copier.calls) != 1 {
 		t.Fatalf("expected still 1 copy-forward call after 2nd SaveDraft (autosave), got %d", len(copier.calls))
+	}
+}
+
+// TestSaveDraft_CopiesAppendicesFromTheAppendixSource: a new draft copies from the version the
+// store names as the source (the rejected one after a rejection), and from nothing when it names
+// none.
+func TestSaveDraft_CopiesAppendicesFromTheAppendixSource(t *testing.T) {
+	cases := []struct {
+		name     string
+		source   uuid.UUID
+		wantCall bool
+	}{
+		{"a rejected version", uuid.New(), true},
+		{"no source", uuid.Nil, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			fakePS := newFakePolicyStore()
+			copier := &fakeAppendixCopier{}
+			p, err := domain.NewPolicy("Rejected Policy", uuid.New(), domain.SensitivityStandard, uuid.New())
+			if err != nil {
+				t.Fatalf("NewPolicy: %v", err)
+			}
+			fakePS.policies[p.ID] = p
+			fakePS.appendixSource = map[uuid.UUID]uuid.UUID{p.ID: tc.source}
+			h := grpcsvc.NewPolicyHandler(fakePS, newFakeCategoryStore(), newFakeTemplateStore(), domain.NoopValidator{}, nil).
+				WithAppendixCopier(copier)
+			resp, err := h.SaveDraft(context.Background(), &corev1.SaveDraftRequest{
+				PolicyId:    p.ID.String(),
+				ContentJson: `{"sections":{}}`,
+				ActorUserId: uuid.New().String(),
+			})
+			if err != nil {
+				t.Fatalf("SaveDraft: %v", err)
+			}
+			if !tc.wantCall {
+				if len(copier.calls) != 0 {
+					t.Fatalf("copy-forward calls = %v, want none", copier.calls)
+				}
+				return
+			}
+			if len(copier.calls) != 1 || copier.calls[0][0] != tc.source.String() || copier.calls[0][1] != resp.GetVersion().GetId() {
+				t.Fatalf("copy-forward calls = %v, want one from %s to %s", copier.calls, tc.source, resp.GetVersion().GetId())
+			}
+		})
 	}
 }
 

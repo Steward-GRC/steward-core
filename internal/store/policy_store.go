@@ -503,6 +503,39 @@ func (s *PolicyStore) UpsertDraft(ctx context.Context, pv domain.PolicyVersion) 
 	return pv, res, nil
 }
 
+// AppendixSource names the version a new draft copies its appendices from, or
+// uuid.Nil when the policy has none to give. It is the most recent rejected
+// version when that is newer than the published one (or nothing is published),
+// else the published version. A rejected version is final and its author's
+// next save starts a new draft, which must not lose the rejected appendices;
+// this mirrors the mock's rule for links, "rejected ?? published". A rejection
+// older than the published version was already carried into it, so it no
+// longer counts. Recency compares the rows' created_at, both stamped by the
+// database on the last save, so a skewed application clock cannot reorder them
+// (published_at is stamped by the application).
+func (s *PolicyStore) AppendixSource(ctx context.Context, policyID uuid.UUID) (uuid.UUID, error) {
+	var id uuid.UUID
+	err := s.db.Querier().QueryRow(ctx,
+		`SELECT COALESCE(
+		     (SELECT r.id FROM policy_versions r
+		       WHERE r.policy_id = $1 AND r.status = 'rejected'
+		         AND r.created_at > COALESCE(
+		               (SELECT pv.created_at FROM policies p
+		                  JOIN policy_versions pv ON pv.id = p.current_published_version_id
+		                 WHERE p.id = $1),
+		               '-infinity'::timestamptz)
+		       ORDER BY r.created_at DESC, r.id DESC
+		       LIMIT 1),
+		     (SELECT current_published_version_id FROM policies WHERE id = $1),
+		     '00000000-0000-0000-0000-000000000000'::uuid)`,
+		policyID,
+	).Scan(&id)
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("PolicyStore.AppendixSource %s: %w", policyID, err)
+	}
+	return id, nil
+}
+
 // UpdateDraftContent overwrites the content of the policy's working copy: a
 // draft, or a version in review (the author keeps editing while approvers
 // review, as in the mock). The caller has already validated it against the
