@@ -127,6 +127,32 @@ func TestSnapshotShowsEachApproverTheEditMadeInReview(t *testing.T) {
 	}
 }
 
+// Mock: review-snapshots "shows each approver the edit the author made in review", through the
+// gateway saveDraft path (UpsertDraft) rather than the collab checkpoint path (UpdateDraftContent).
+// The save lands in place on the same version, which stays in review.
+func TestSnapshotShowsEditSavedThroughSaveDraftInReview(t *testing.T) {
+	f := newSnapFixture(t)
+	if moved(f.read(f.charlie)) || moved(f.read(f.alice)) {
+		t.Fatal("nothing before the author edits")
+	}
+	d, _ := domain.NewPolicyVersionDraft(f.policy.ID, f.tv.ID, uuid.New(), snapEdit1)
+	saved, res, err := f.ps.UpsertDraft(f.ctx, d)
+	if err != nil {
+		t.Fatalf("UpsertDraft in review: %v", err)
+	}
+	if saved.ID != f.version || res.Inserted || !res.ContentChanged {
+		t.Fatalf("save in review: id %s inserted %v changed %v, want in place on %s", saved.ID, res.Inserted, res.ContentChanged, f.version)
+	}
+	if saved.Status != domain.PolicyVersionStatusInReview {
+		t.Fatalf("status after save = %q, want in_review", saved.Status)
+	}
+	for name, u := range map[string]uuid.UUID{"charlie": f.charlie, "alice": f.alice} {
+		if !moved(f.read(u)) {
+			t.Fatalf("%s should see the edit saved in review", name)
+		}
+	}
+}
+
 func TestSnapshotStoresACopyNotAReference(t *testing.T) {
 	f := newSnapFixture(t)
 	f.read(f.charlie)

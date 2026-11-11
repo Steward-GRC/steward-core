@@ -10,12 +10,13 @@ stubs committed in `gen/go`. Access to every RPC is enforced at the gateway; cor
 | `PolicyService` | Policies and procedures: drafts, publish, versions, diffs, templates, sensitivity, rename, move, owners, acknowledgement settings and reindexing. |
 | `TemplateService` | Templates and their versions. |
 | `AppendixService` | Appendices of a draft version. |
+| `PolicyAppendixService` | The appendices a policy or procedure owns, which belong to the document and not to one of its versions. Each has a version table of its own: at most one `DRAFT` beside the `PUBLISHED` history, and readers see the latest published row. `ListPolicyAppendices` returns the live appendices in order (the retired ones after them with `include_retired`), each with `published`, `draft`, `versions` (oldest first), `published_versions` (newest first, no draft) and `contributor_ids` (everyone who saved or published, each once, in first-save order); the letter (A, B, C) follows the order of the live appendices and is empty while retired. `CreatePolicyAppendix` starts a draft v1 last in the order, with a blank title becoming `Appendix <letter>` and skipping any title the policy's appendices (retired included) already use. `SaveAppendixDraft` updates the open draft or starts draft vN+1 beside the published row, and a save equal to the published title and content with no draft open makes none. `PublishAppendix` promotes the draft to the next published version. `RetireAppendix` hides an appendix and keeps its history, `RestoreAppendix` puts it back last in the order; neither makes a draft. Saving or publishing a retired appendix is `FailedPrecondition`, as is publishing with no draft. Core applies no role or reader filtering: it returns the published row and the draft side by side and the gateway decides who sees the draft. Every write names its `actor_user_id`. `AppendixService` and its tables are unchanged. |
 | `ContactService`, `DefinitionLibraryService`, `ReferenceService` | The shared libraries and each document's attachments. |
 | `RelationService` | Related links: a flat, one-way list per document. |
 | `ReviewService` | Inline review threads on a policy version, each with one approver, and suggested changes with counters and outcomes on a thread; the gateway passes `actor_user_id` and `actor_side`. |
 | `SettingsService` | The global settings and the keyless email-service status. |
 | `EmailServiceSecretService` | Internal only: the email-service configuration with its key, for the service that sends mail. The gateway never serves it. |
-| `AssetService` | Editor images. |
+| `AssetService` | Editor images and files: upload, get, and the admin setting of which kinds of file are accepted. |
 
 The server also serves `grpc.health.v1` and reflection. On `grpc.health.v1`, `liveness` reports the
 process only, and the empty name and `readiness` fail while Postgres or RabbitMQ is down. Every
@@ -28,7 +29,8 @@ process only, and the empty name and `readiness` fail while Postgres or RabbitMQ
 **Audit.** Every change publishes a `steward.audit.v1.AuditEvent` (steward-audit's contract) to the
 `audit` topic exchange, as protobuf binary with the content type
 `application/protobuf; proto=steward.audit.v1.AuditEvent` and the routing key `audit.audit`.
-Actions are dotted verbs such as `category.created`, `category_rule.updated`, `policy.published`
+Actions are dotted verbs such as `category.created`, `category_rule.updated`, `policy.published`,
+`appendix.created`, `appendix.saved`, `appendix.published`, `appendix.retired`, `appendix.restored`
 and `email_service_config.updated`. No event carries a secret or document content.
 
 **Lifecycle.** JSON events on the `jobs` topic exchange, for the services that act on documents:

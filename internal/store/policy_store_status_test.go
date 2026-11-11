@@ -6,6 +6,7 @@ package store_test
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -194,6 +195,15 @@ func TestPolicyStoreSaveWhileInReviewStaysInReview(t *testing.T) {
 	}
 	if err := f.ps.UpdateDraftContent(f.ctx, d1.ID, reviewedText); err != nil {
 		t.Fatalf("UpdateDraftContent in review: %v", err)
+	}
+	// Mock: collab "keeps a checkpoint for a version in review": the checkpoint is stored and the
+	// version stays in review.
+	got, err := f.ps.GetPolicyVersion(f.ctx, d1.ID)
+	if err != nil {
+		t.Fatalf("GetPolicyVersion: %v", err)
+	}
+	if got.Status != domain.PolicyVersionStatusInReview || !strings.Contains(got.ContentJSON, "Body") {
+		t.Fatalf("after checkpoint: status %q content %q, want in_review with the checkpoint text", got.Status, got.ContentJSON)
 	}
 }
 
