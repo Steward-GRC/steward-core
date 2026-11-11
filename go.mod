@@ -2,7 +2,7 @@ module github.com/Steward-GRC/steward-core
 
 go 1.26.3
 
-toolchain go1.26.10
+toolchain go1.26.11
 
 require (
 	github.com/Bugs5382/go-apperr v1.2.1
