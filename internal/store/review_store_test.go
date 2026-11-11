@@ -99,10 +99,18 @@ func TestReviewStoreListsAVersionsThreadsOldestFirst(t *testing.T) {
 	require.Equal(t, []uuid.UUID{first.ID, second.ID}, []uuid.UUID{list[0].ID, list[1].ID})
 	require.Len(t, list[0].Messages, 1)
 
-	none, err := s.ListThreads(ctx, uuid.New(), uuid.Nil)
+	// A real version with no threads is an empty list, not an error.
+	empty, _ := reviewVersion(t, pool)
+	none, err := s.ListThreads(ctx, empty, uuid.Nil)
 	require.NoError(t, err)
 	require.NotNil(t, none)
 	require.Empty(t, none)
+}
+
+func TestReviewStoreListOnUnknownVersion(t *testing.T) {
+	s := store.NewReviewStore(newTestDB(t))
+	_, err := s.ListThreads(context.Background(), uuid.New(), uuid.Nil)
+	require.ErrorIs(t, err, store.ErrReviewVersionNotFound)
 }
 
 func TestReviewStoreThreadIsWithOneApprover(t *testing.T) {

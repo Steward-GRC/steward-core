@@ -87,7 +87,8 @@ func (s *ReviewStore) GetThread(ctx context.Context, id uuid.UUID) (domain.Revie
 
 // ListThreads returns a version's threads, oldest first, each with its
 // messages. A non-nil approver keeps only the threads with that approver.
-// It returns an empty slice, not nil.
+// It returns an empty slice, not nil, for a version with no threads, and
+// ErrReviewVersionNotFound when the version does not exist.
 func (s *ReviewStore) ListThreads(ctx context.Context, versionID, approver uuid.UUID) ([]domain.ReviewThread, error) {
 	rows, err := s.db.Querier().Query(ctx, `
 		SELECT `+reviewThreadColumns+` FROM review_threads
@@ -112,6 +113,15 @@ func (s *ReviewStore) ListThreads(ctx context.Context, versionID, approver uuid.
 	}
 	rows.Close()
 	if len(ids) == 0 {
+		// An empty list is only right for a version that exists.
+		var exists bool
+		if err := s.db.Querier().QueryRow(ctx,
+			`SELECT EXISTS (SELECT 1 FROM policy_versions WHERE id = $1)`, versionID).Scan(&exists); err != nil {
+			return nil, fmt.Errorf("list review threads: %w", err)
+		}
+		if !exists {
+			return nil, ErrReviewVersionNotFound
+		}
 		return out, nil
 	}
 	msgs, err := s.messages(ctx, ids)

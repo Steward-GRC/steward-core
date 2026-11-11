@@ -204,6 +204,14 @@ func TestListReviewThreadsForTheAuthorSeesEveryThread(t *testing.T) {
 	require.Equal(t, th.GetId(), resp.GetThreads()[0].GetId())
 }
 
+// mock: an unknown policy version is NotFound, not an empty list
+func TestListReviewThreadsOnUnknownVersionIsNotFound(t *testing.T) {
+	f := newReviewFixture(t)
+	f.backend.fail = store.ErrReviewVersionNotFound
+	_, err := f.h.ListReviewThreads(context.Background(), &corev1.ListReviewThreadsRequest{PolicyVersionId: f.version})
+	require.Equal(t, codes.NotFound, status.Code(err))
+}
+
 // mock: lets the drafter reply, resolve and reopen
 func TestReplyResolveAndReopen(t *testing.T) {
 	f := newReviewFixture(t)
