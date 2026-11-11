@@ -23,7 +23,7 @@ value that doesn't parse stops the service with every problem listed; nothing fa
 | `WORKLOAD_AUTH` | enabled | `disabled` turns caller authentication off, for local runs only. Nothing else turns it off, and it can't be combined with `WORKLOAD_OIDC_ISSUER`. |
 | `REDIS_ADDR`, `REDIS_PASSWORD` | empty | The read cache (Redis or Valkey). Off when `REDIS_ADDR` is empty. |
 | `CACHE_TTL` | `10m` | How long cached published versions and settings are kept. |
-| `S3_ENDPOINT`, `S3_BUCKET` | empty | The object store for editor images (RustFS or any S3 API). Set both or neither; off when empty. |
+| `S3_ENDPOINT`, `S3_BUCKET` | empty | The object store for editor images and files (RustFS or any S3 API). Set both or neither; off when empty. |
 | `S3_REGION` | `us-east-1` | The region the object store expects. |
 | `S3_ACCESS_KEY`, `S3_SECRET_KEY` | empty | Static object-store credentials. |
 | `S3_FORCE_PATH_STYLE` | `true` | Path-style bucket addressing, which most self-hosted stores need. |

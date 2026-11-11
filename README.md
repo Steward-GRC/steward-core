@@ -15,7 +15,7 @@ libraries documents attach.
   and rendered live; related links between documents.
 - **Settings:** the site-wide announcement and maintenance notices, and the outbound email-service
   configuration, with its key encrypted at rest.
-- **Editor images:** stored once in object storage, served by the gateway.
+- **Editor images and files:** stored once in object storage, served by the gateway. An admin setting chooses which kinds of file are accepted; the kind comes from the bytes, and web pages, scripts, executables and macro-enabled Office files are always refused.
 
 Core calls no other service. It publishes lifecycle events and steward-audit's `AuditEvent`.
 

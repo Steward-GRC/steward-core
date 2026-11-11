@@ -24,6 +24,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	corev1 "github.com/Steward-GRC/steward-core/gen/go/steward/core/v1"
+	"github.com/Steward-GRC/steward-core/internal/domain"
 )
 
 type probe struct {
@@ -92,7 +93,7 @@ func TestServeDropsAnActorFromAnUntrustedCaller(t *testing.T) {
 }
 
 func TestServeAcceptsAnEditorImageAboveTheDefaultLimit(t *testing.T) {
-	require.GreaterOrEqual(t, MaxMessageBytes, 10<<20+1<<20, "a 10 MiB image plus framing fits one message")
+	require.GreaterOrEqual(t, MaxMessageBytes, domain.MaxFileBytes+1<<20, "the largest file plus framing fits one message")
 }
 
 func downChecker(t *testing.T, up *atomic.Bool) *health.Checker {

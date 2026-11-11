@@ -33,9 +33,10 @@ import (
 	workloadidentity "github.com/Bugs5382/go-workload-identity"
 )
 
-// MaxMessageBytes is the message limit both ways. An editor image (up to
-// 10 MiB) travels in one unary message, above gRPC's 4 MiB default.
-const MaxMessageBytes = 16 << 20
+// MaxMessageBytes is the message limit both ways. An editor file (up to
+// domain.MaxFileBytes, 25 MiB) travels in one unary message, above gRPC's 4 MiB
+// default, with room for the request's other fields.
+const MaxMessageBytes = 32 << 20
 
 // gracefulStopTimeout bounds the drain of in-flight RPCs on shutdown, so a
 // hung peer can't hold the process.
