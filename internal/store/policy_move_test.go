@@ -31,7 +31,7 @@ func newMoveFixture(t *testing.T) moveFixture {
 	ps := store.NewPolicyStore(pool)
 	ctx := context.Background()
 	src, _ := setupCategoryAndTemplate(t, gs, ts)
-	dst, err := gs.Create(ctx, mustCategory(t, "Finance", "fin-"+uuid.New().String()[:8]))
+	dst, err := gs.Create(ctx, mustMoveCategory(t, "Finance", "fin-"+uuid.New().String()[:8]))
 	if err != nil {
 		t.Fatalf("create target category: %v", err)
 	}
@@ -58,7 +58,7 @@ func newMoveFixture(t *testing.T) moveFixture {
 	}
 }
 
-func mustCategory(t *testing.T, name, slug string) domain.Category {
+func mustMoveCategory(t *testing.T, name, slug string) domain.Category {
 	t.Helper()
 	c, err := domain.NewCategory(name, slug, uuid.Nil)
 	if err != nil {

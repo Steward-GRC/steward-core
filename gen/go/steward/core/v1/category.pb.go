@@ -279,9 +279,12 @@ type Category struct {
 	// The position among the siblings under the same parent, counted from
 	// zero; lower comes first. Gaps are possible after a delete, so only the
 	// relative order counts.
-	OrderIndex    int32 `protobuf:"varint,18,opt,name=order_index,json=orderIndex,proto3" json:"order_index,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	OrderIndex int32 `protobuf:"varint,18,opt,name=order_index,json=orderIndex,proto3" json:"order_index,omitempty"`
+	// True when default_template_id is binding: a document in this category, or in one that inherits
+	// the template, must use it. Never set without a default_template_id.
+	DefaultTemplateLocked bool `protobuf:"varint,19,opt,name=default_template_locked,json=defaultTemplateLocked,proto3" json:"default_template_locked,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
 }
 
 func (x *Category) Reset() {
@@ -438,6 +441,13 @@ func (x *Category) GetOrderIndex() int32 {
 		return x.OrderIndex
 	}
 	return 0
+}
+
+func (x *Category) GetDefaultTemplateLocked() bool {
+	if x != nil {
+		return x.DefaultTemplateLocked
+	}
+	return false
 }
 
 type CreateCategoryRequest struct {
@@ -851,6 +861,113 @@ func (x *SetCategoryDefaultsResponse) GetCategory() *Category {
 	return nil
 }
 
+// SetCategoryTemplateLockRequest locks or unlocks the category's default
+// template. Locking is refused (FAILED_PRECONDITION) while the category names
+// no default template.
+type SetCategoryTemplateLockRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Locked        bool                   `protobuf:"varint,2,opt,name=locked,proto3" json:"locked,omitempty"`
+	ActorUserId   string                 `protobuf:"bytes,3,opt,name=actor_user_id,json=actorUserId,proto3" json:"actor_user_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetCategoryTemplateLockRequest) Reset() {
+	*x = SetCategoryTemplateLockRequest{}
+	mi := &file_steward_core_v1_category_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetCategoryTemplateLockRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetCategoryTemplateLockRequest) ProtoMessage() {}
+
+func (x *SetCategoryTemplateLockRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_steward_core_v1_category_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetCategoryTemplateLockRequest.ProtoReflect.Descriptor instead.
+func (*SetCategoryTemplateLockRequest) Descriptor() ([]byte, []int) {
+	return file_steward_core_v1_category_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *SetCategoryTemplateLockRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *SetCategoryTemplateLockRequest) GetLocked() bool {
+	if x != nil {
+		return x.Locked
+	}
+	return false
+}
+
+func (x *SetCategoryTemplateLockRequest) GetActorUserId() string {
+	if x != nil {
+		return x.ActorUserId
+	}
+	return ""
+}
+
+type SetCategoryTemplateLockResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Category      *Category              `protobuf:"bytes,1,opt,name=category,proto3" json:"category,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetCategoryTemplateLockResponse) Reset() {
+	*x = SetCategoryTemplateLockResponse{}
+	mi := &file_steward_core_v1_category_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetCategoryTemplateLockResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetCategoryTemplateLockResponse) ProtoMessage() {}
+
+func (x *SetCategoryTemplateLockResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_steward_core_v1_category_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetCategoryTemplateLockResponse.ProtoReflect.Descriptor instead.
+func (*SetCategoryTemplateLockResponse) Descriptor() ([]byte, []int) {
+	return file_steward_core_v1_category_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *SetCategoryTemplateLockResponse) GetCategory() *Category {
+	if x != nil {
+		return x.Category
+	}
+	return nil
+}
+
 // RenameCategoryRequest changes the name and slug. Existing document numbers
 // never change; the slug only shapes numbers minted after the rename.
 type RenameCategoryRequest struct {
@@ -864,7 +981,7 @@ type RenameCategoryRequest struct {
 
 func (x *RenameCategoryRequest) Reset() {
 	*x = RenameCategoryRequest{}
-	mi := &file_steward_core_v1_category_proto_msgTypes[9]
+	mi := &file_steward_core_v1_category_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -876,7 +993,7 @@ func (x *RenameCategoryRequest) String() string {
 func (*RenameCategoryRequest) ProtoMessage() {}
 
 func (x *RenameCategoryRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_steward_core_v1_category_proto_msgTypes[9]
+	mi := &file_steward_core_v1_category_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -889,7 +1006,7 @@ func (x *RenameCategoryRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RenameCategoryRequest.ProtoReflect.Descriptor instead.
 func (*RenameCategoryRequest) Descriptor() ([]byte, []int) {
-	return file_steward_core_v1_category_proto_rawDescGZIP(), []int{9}
+	return file_steward_core_v1_category_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *RenameCategoryRequest) GetId() string {
@@ -922,7 +1039,7 @@ type RenameCategoryResponse struct {
 
 func (x *RenameCategoryResponse) Reset() {
 	*x = RenameCategoryResponse{}
-	mi := &file_steward_core_v1_category_proto_msgTypes[10]
+	mi := &file_steward_core_v1_category_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -934,7 +1051,7 @@ func (x *RenameCategoryResponse) String() string {
 func (*RenameCategoryResponse) ProtoMessage() {}
 
 func (x *RenameCategoryResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_steward_core_v1_category_proto_msgTypes[10]
+	mi := &file_steward_core_v1_category_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -947,7 +1064,7 @@ func (x *RenameCategoryResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RenameCategoryResponse.ProtoReflect.Descriptor instead.
 func (*RenameCategoryResponse) Descriptor() ([]byte, []int) {
-	return file_steward_core_v1_category_proto_rawDescGZIP(), []int{10}
+	return file_steward_core_v1_category_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *RenameCategoryResponse) GetCategory() *Category {
@@ -968,7 +1085,7 @@ type DeleteCategoryRequest struct {
 
 func (x *DeleteCategoryRequest) Reset() {
 	*x = DeleteCategoryRequest{}
-	mi := &file_steward_core_v1_category_proto_msgTypes[11]
+	mi := &file_steward_core_v1_category_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -980,7 +1097,7 @@ func (x *DeleteCategoryRequest) String() string {
 func (*DeleteCategoryRequest) ProtoMessage() {}
 
 func (x *DeleteCategoryRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_steward_core_v1_category_proto_msgTypes[11]
+	mi := &file_steward_core_v1_category_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -993,7 +1110,7 @@ func (x *DeleteCategoryRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteCategoryRequest.ProtoReflect.Descriptor instead.
 func (*DeleteCategoryRequest) Descriptor() ([]byte, []int) {
-	return file_steward_core_v1_category_proto_rawDescGZIP(), []int{11}
+	return file_steward_core_v1_category_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *DeleteCategoryRequest) GetId() string {
@@ -1012,7 +1129,7 @@ type DeleteCategoryResponse struct {
 
 func (x *DeleteCategoryResponse) Reset() {
 	*x = DeleteCategoryResponse{}
-	mi := &file_steward_core_v1_category_proto_msgTypes[12]
+	mi := &file_steward_core_v1_category_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1024,7 +1141,7 @@ func (x *DeleteCategoryResponse) String() string {
 func (*DeleteCategoryResponse) ProtoMessage() {}
 
 func (x *DeleteCategoryResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_steward_core_v1_category_proto_msgTypes[12]
+	mi := &file_steward_core_v1_category_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1037,7 +1154,7 @@ func (x *DeleteCategoryResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteCategoryResponse.ProtoReflect.Descriptor instead.
 func (*DeleteCategoryResponse) Descriptor() ([]byte, []int) {
-	return file_steward_core_v1_category_proto_rawDescGZIP(), []int{12}
+	return file_steward_core_v1_category_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *DeleteCategoryResponse) GetDeleted() bool {
@@ -1062,7 +1179,7 @@ type MoveCategoryRequest struct {
 
 func (x *MoveCategoryRequest) Reset() {
 	*x = MoveCategoryRequest{}
-	mi := &file_steward_core_v1_category_proto_msgTypes[13]
+	mi := &file_steward_core_v1_category_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1074,7 +1191,7 @@ func (x *MoveCategoryRequest) String() string {
 func (*MoveCategoryRequest) ProtoMessage() {}
 
 func (x *MoveCategoryRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_steward_core_v1_category_proto_msgTypes[13]
+	mi := &file_steward_core_v1_category_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1087,7 +1204,7 @@ func (x *MoveCategoryRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MoveCategoryRequest.ProtoReflect.Descriptor instead.
 func (*MoveCategoryRequest) Descriptor() ([]byte, []int) {
-	return file_steward_core_v1_category_proto_rawDescGZIP(), []int{13}
+	return file_steward_core_v1_category_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *MoveCategoryRequest) GetCategoryId() string {
@@ -1117,7 +1234,7 @@ type MoveCategoryResponse struct {
 
 func (x *MoveCategoryResponse) Reset() {
 	*x = MoveCategoryResponse{}
-	mi := &file_steward_core_v1_category_proto_msgTypes[14]
+	mi := &file_steward_core_v1_category_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1129,7 +1246,7 @@ func (x *MoveCategoryResponse) String() string {
 func (*MoveCategoryResponse) ProtoMessage() {}
 
 func (x *MoveCategoryResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_steward_core_v1_category_proto_msgTypes[14]
+	mi := &file_steward_core_v1_category_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1142,7 +1259,7 @@ func (x *MoveCategoryResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MoveCategoryResponse.ProtoReflect.Descriptor instead.
 func (*MoveCategoryResponse) Descriptor() ([]byte, []int) {
-	return file_steward_core_v1_category_proto_rawDescGZIP(), []int{14}
+	return file_steward_core_v1_category_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *MoveCategoryResponse) GetCategory() *Category {
@@ -1172,7 +1289,7 @@ type ReorderCategoriesRequest struct {
 
 func (x *ReorderCategoriesRequest) Reset() {
 	*x = ReorderCategoriesRequest{}
-	mi := &file_steward_core_v1_category_proto_msgTypes[15]
+	mi := &file_steward_core_v1_category_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1184,7 +1301,7 @@ func (x *ReorderCategoriesRequest) String() string {
 func (*ReorderCategoriesRequest) ProtoMessage() {}
 
 func (x *ReorderCategoriesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_steward_core_v1_category_proto_msgTypes[15]
+	mi := &file_steward_core_v1_category_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1197,7 +1314,7 @@ func (x *ReorderCategoriesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReorderCategoriesRequest.ProtoReflect.Descriptor instead.
 func (*ReorderCategoriesRequest) Descriptor() ([]byte, []int) {
-	return file_steward_core_v1_category_proto_rawDescGZIP(), []int{15}
+	return file_steward_core_v1_category_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *ReorderCategoriesRequest) GetParentId() string {
@@ -1224,7 +1341,7 @@ type ReorderCategoriesResponse struct {
 
 func (x *ReorderCategoriesResponse) Reset() {
 	*x = ReorderCategoriesResponse{}
-	mi := &file_steward_core_v1_category_proto_msgTypes[16]
+	mi := &file_steward_core_v1_category_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1236,7 +1353,7 @@ func (x *ReorderCategoriesResponse) String() string {
 func (*ReorderCategoriesResponse) ProtoMessage() {}
 
 func (x *ReorderCategoriesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_steward_core_v1_category_proto_msgTypes[16]
+	mi := &file_steward_core_v1_category_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1249,7 +1366,7 @@ func (x *ReorderCategoriesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReorderCategoriesResponse.ProtoReflect.Descriptor instead.
 func (*ReorderCategoriesResponse) Descriptor() ([]byte, []int) {
-	return file_steward_core_v1_category_proto_rawDescGZIP(), []int{16}
+	return file_steward_core_v1_category_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *ReorderCategoriesResponse) GetCategories() []*Category {
@@ -1282,7 +1399,7 @@ type SetGovernanceRequest struct {
 
 func (x *SetGovernanceRequest) Reset() {
 	*x = SetGovernanceRequest{}
-	mi := &file_steward_core_v1_category_proto_msgTypes[17]
+	mi := &file_steward_core_v1_category_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1294,7 +1411,7 @@ func (x *SetGovernanceRequest) String() string {
 func (*SetGovernanceRequest) ProtoMessage() {}
 
 func (x *SetGovernanceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_steward_core_v1_category_proto_msgTypes[17]
+	mi := &file_steward_core_v1_category_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1307,7 +1424,7 @@ func (x *SetGovernanceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetGovernanceRequest.ProtoReflect.Descriptor instead.
 func (*SetGovernanceRequest) Descriptor() ([]byte, []int) {
-	return file_steward_core_v1_category_proto_rawDescGZIP(), []int{17}
+	return file_steward_core_v1_category_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *SetGovernanceRequest) GetId() string {
@@ -1403,7 +1520,7 @@ type SetGovernanceResponse struct {
 
 func (x *SetGovernanceResponse) Reset() {
 	*x = SetGovernanceResponse{}
-	mi := &file_steward_core_v1_category_proto_msgTypes[18]
+	mi := &file_steward_core_v1_category_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1415,7 +1532,7 @@ func (x *SetGovernanceResponse) String() string {
 func (*SetGovernanceResponse) ProtoMessage() {}
 
 func (x *SetGovernanceResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_steward_core_v1_category_proto_msgTypes[18]
+	mi := &file_steward_core_v1_category_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1428,7 +1545,7 @@ func (x *SetGovernanceResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetGovernanceResponse.ProtoReflect.Descriptor instead.
 func (*SetGovernanceResponse) Descriptor() ([]byte, []int) {
-	return file_steward_core_v1_category_proto_rawDescGZIP(), []int{18}
+	return file_steward_core_v1_category_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *SetGovernanceResponse) GetCategory() *Category {
@@ -1449,7 +1566,7 @@ type GetEffectiveGovernanceRequest struct {
 
 func (x *GetEffectiveGovernanceRequest) Reset() {
 	*x = GetEffectiveGovernanceRequest{}
-	mi := &file_steward_core_v1_category_proto_msgTypes[19]
+	mi := &file_steward_core_v1_category_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1461,7 +1578,7 @@ func (x *GetEffectiveGovernanceRequest) String() string {
 func (*GetEffectiveGovernanceRequest) ProtoMessage() {}
 
 func (x *GetEffectiveGovernanceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_steward_core_v1_category_proto_msgTypes[19]
+	mi := &file_steward_core_v1_category_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1474,7 +1591,7 @@ func (x *GetEffectiveGovernanceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetEffectiveGovernanceRequest.ProtoReflect.Descriptor instead.
 func (*GetEffectiveGovernanceRequest) Descriptor() ([]byte, []int) {
-	return file_steward_core_v1_category_proto_rawDescGZIP(), []int{19}
+	return file_steward_core_v1_category_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *GetEffectiveGovernanceRequest) GetCategoryId() string {
@@ -1502,7 +1619,7 @@ type GetEffectiveGovernanceResponse struct {
 
 func (x *GetEffectiveGovernanceResponse) Reset() {
 	*x = GetEffectiveGovernanceResponse{}
-	mi := &file_steward_core_v1_category_proto_msgTypes[20]
+	mi := &file_steward_core_v1_category_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1514,7 +1631,7 @@ func (x *GetEffectiveGovernanceResponse) String() string {
 func (*GetEffectiveGovernanceResponse) ProtoMessage() {}
 
 func (x *GetEffectiveGovernanceResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_steward_core_v1_category_proto_msgTypes[20]
+	mi := &file_steward_core_v1_category_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1527,7 +1644,7 @@ func (x *GetEffectiveGovernanceResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetEffectiveGovernanceResponse.ProtoReflect.Descriptor instead.
 func (*GetEffectiveGovernanceResponse) Descriptor() ([]byte, []int) {
-	return file_steward_core_v1_category_proto_rawDescGZIP(), []int{20}
+	return file_steward_core_v1_category_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *GetEffectiveGovernanceResponse) GetAckAudienceGroups() []string {
@@ -1589,7 +1706,7 @@ type CategoryRule struct {
 
 func (x *CategoryRule) Reset() {
 	*x = CategoryRule{}
-	mi := &file_steward_core_v1_category_proto_msgTypes[21]
+	mi := &file_steward_core_v1_category_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1601,7 +1718,7 @@ func (x *CategoryRule) String() string {
 func (*CategoryRule) ProtoMessage() {}
 
 func (x *CategoryRule) ProtoReflect() protoreflect.Message {
-	mi := &file_steward_core_v1_category_proto_msgTypes[21]
+	mi := &file_steward_core_v1_category_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1614,7 +1731,7 @@ func (x *CategoryRule) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CategoryRule.ProtoReflect.Descriptor instead.
 func (*CategoryRule) Descriptor() ([]byte, []int) {
-	return file_steward_core_v1_category_proto_rawDescGZIP(), []int{21}
+	return file_steward_core_v1_category_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *CategoryRule) GetSubjectKind() RuleSubjectKind {
@@ -1668,7 +1785,7 @@ type GetCategoryRulesetRequest struct {
 
 func (x *GetCategoryRulesetRequest) Reset() {
 	*x = GetCategoryRulesetRequest{}
-	mi := &file_steward_core_v1_category_proto_msgTypes[22]
+	mi := &file_steward_core_v1_category_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1680,7 +1797,7 @@ func (x *GetCategoryRulesetRequest) String() string {
 func (*GetCategoryRulesetRequest) ProtoMessage() {}
 
 func (x *GetCategoryRulesetRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_steward_core_v1_category_proto_msgTypes[22]
+	mi := &file_steward_core_v1_category_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1693,7 +1810,7 @@ func (x *GetCategoryRulesetRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetCategoryRulesetRequest.ProtoReflect.Descriptor instead.
 func (*GetCategoryRulesetRequest) Descriptor() ([]byte, []int) {
-	return file_steward_core_v1_category_proto_rawDescGZIP(), []int{22}
+	return file_steward_core_v1_category_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *GetCategoryRulesetRequest) GetCategoryId() string {
@@ -1712,7 +1829,7 @@ type GetCategoryRulesetResponse struct {
 
 func (x *GetCategoryRulesetResponse) Reset() {
 	*x = GetCategoryRulesetResponse{}
-	mi := &file_steward_core_v1_category_proto_msgTypes[23]
+	mi := &file_steward_core_v1_category_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1724,7 +1841,7 @@ func (x *GetCategoryRulesetResponse) String() string {
 func (*GetCategoryRulesetResponse) ProtoMessage() {}
 
 func (x *GetCategoryRulesetResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_steward_core_v1_category_proto_msgTypes[23]
+	mi := &file_steward_core_v1_category_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1737,7 +1854,7 @@ func (x *GetCategoryRulesetResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetCategoryRulesetResponse.ProtoReflect.Descriptor instead.
 func (*GetCategoryRulesetResponse) Descriptor() ([]byte, []int) {
-	return file_steward_core_v1_category_proto_rawDescGZIP(), []int{23}
+	return file_steward_core_v1_category_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *GetCategoryRulesetResponse) GetRules() []*CategoryRule {
@@ -1757,7 +1874,7 @@ type SetCategoryRulesetRequest struct {
 
 func (x *SetCategoryRulesetRequest) Reset() {
 	*x = SetCategoryRulesetRequest{}
-	mi := &file_steward_core_v1_category_proto_msgTypes[24]
+	mi := &file_steward_core_v1_category_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1769,7 +1886,7 @@ func (x *SetCategoryRulesetRequest) String() string {
 func (*SetCategoryRulesetRequest) ProtoMessage() {}
 
 func (x *SetCategoryRulesetRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_steward_core_v1_category_proto_msgTypes[24]
+	mi := &file_steward_core_v1_category_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1782,7 +1899,7 @@ func (x *SetCategoryRulesetRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetCategoryRulesetRequest.ProtoReflect.Descriptor instead.
 func (*SetCategoryRulesetRequest) Descriptor() ([]byte, []int) {
-	return file_steward_core_v1_category_proto_rawDescGZIP(), []int{24}
+	return file_steward_core_v1_category_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *SetCategoryRulesetRequest) GetCategoryId() string {
@@ -1808,7 +1925,7 @@ type SetCategoryRulesetResponse struct {
 
 func (x *SetCategoryRulesetResponse) Reset() {
 	*x = SetCategoryRulesetResponse{}
-	mi := &file_steward_core_v1_category_proto_msgTypes[25]
+	mi := &file_steward_core_v1_category_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1820,7 +1937,7 @@ func (x *SetCategoryRulesetResponse) String() string {
 func (*SetCategoryRulesetResponse) ProtoMessage() {}
 
 func (x *SetCategoryRulesetResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_steward_core_v1_category_proto_msgTypes[25]
+	mi := &file_steward_core_v1_category_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1833,7 +1950,7 @@ func (x *SetCategoryRulesetResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetCategoryRulesetResponse.ProtoReflect.Descriptor instead.
 func (*SetCategoryRulesetResponse) Descriptor() ([]byte, []int) {
-	return file_steward_core_v1_category_proto_rawDescGZIP(), []int{25}
+	return file_steward_core_v1_category_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *SetCategoryRulesetResponse) GetRules() []*CategoryRule {
@@ -1855,7 +1972,7 @@ type RemovedCategoryRule struct {
 
 func (x *RemovedCategoryRule) Reset() {
 	*x = RemovedCategoryRule{}
-	mi := &file_steward_core_v1_category_proto_msgTypes[26]
+	mi := &file_steward_core_v1_category_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1867,7 +1984,7 @@ func (x *RemovedCategoryRule) String() string {
 func (*RemovedCategoryRule) ProtoMessage() {}
 
 func (x *RemovedCategoryRule) ProtoReflect() protoreflect.Message {
-	mi := &file_steward_core_v1_category_proto_msgTypes[26]
+	mi := &file_steward_core_v1_category_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1880,7 +1997,7 @@ func (x *RemovedCategoryRule) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemovedCategoryRule.ProtoReflect.Descriptor instead.
 func (*RemovedCategoryRule) Descriptor() ([]byte, []int) {
-	return file_steward_core_v1_category_proto_rawDescGZIP(), []int{26}
+	return file_steward_core_v1_category_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *RemovedCategoryRule) GetCategoryId() string {
@@ -1911,7 +2028,7 @@ type PurgeUserCategoryRulesRequest struct {
 
 func (x *PurgeUserCategoryRulesRequest) Reset() {
 	*x = PurgeUserCategoryRulesRequest{}
-	mi := &file_steward_core_v1_category_proto_msgTypes[27]
+	mi := &file_steward_core_v1_category_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1923,7 +2040,7 @@ func (x *PurgeUserCategoryRulesRequest) String() string {
 func (*PurgeUserCategoryRulesRequest) ProtoMessage() {}
 
 func (x *PurgeUserCategoryRulesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_steward_core_v1_category_proto_msgTypes[27]
+	mi := &file_steward_core_v1_category_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1936,7 +2053,7 @@ func (x *PurgeUserCategoryRulesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PurgeUserCategoryRulesRequest.ProtoReflect.Descriptor instead.
 func (*PurgeUserCategoryRulesRequest) Descriptor() ([]byte, []int) {
-	return file_steward_core_v1_category_proto_rawDescGZIP(), []int{27}
+	return file_steward_core_v1_category_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *PurgeUserCategoryRulesRequest) GetUserId() string {
@@ -1971,7 +2088,7 @@ type PurgeUserCategoryRulesResponse struct {
 
 func (x *PurgeUserCategoryRulesResponse) Reset() {
 	*x = PurgeUserCategoryRulesResponse{}
-	mi := &file_steward_core_v1_category_proto_msgTypes[28]
+	mi := &file_steward_core_v1_category_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1983,7 +2100,7 @@ func (x *PurgeUserCategoryRulesResponse) String() string {
 func (*PurgeUserCategoryRulesResponse) ProtoMessage() {}
 
 func (x *PurgeUserCategoryRulesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_steward_core_v1_category_proto_msgTypes[28]
+	mi := &file_steward_core_v1_category_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1996,7 +2113,7 @@ func (x *PurgeUserCategoryRulesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PurgeUserCategoryRulesResponse.ProtoReflect.Descriptor instead.
 func (*PurgeUserCategoryRulesResponse) Descriptor() ([]byte, []int) {
-	return file_steward_core_v1_category_proto_rawDescGZIP(), []int{28}
+	return file_steward_core_v1_category_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *PurgeUserCategoryRulesResponse) GetRemovedRules() int32 {
@@ -2024,7 +2141,7 @@ var File_steward_core_v1_category_proto protoreflect.FileDescriptor
 
 const file_steward_core_v1_category_proto_rawDesc = "" +
 	"\n" +
-	"\x1esteward/core/v1/category.proto\x12\x0fsteward.core.v1\"\xeb\x05\n" +
+	"\x1esteward/core/v1/category.proto\x12\x0fsteward.core.v1\"\xa3\x06\n" +
 	"\bCategory\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x12\n" +
@@ -2046,7 +2163,8 @@ const file_steward_core_v1_category_proto_rawDesc = "" +
 	"\fack_everyone\x18\x10 \x01(\bR\vackEveryone\x12(\n" +
 	"\x10ack_everyone_set\x18\x11 \x01(\bR\x0eackEveryoneSet\x12\x1f\n" +
 	"\vorder_index\x18\x12 \x01(\x05R\n" +
-	"orderIndex\"\x80\x01\n" +
+	"orderIndex\x126\n" +
+	"\x17default_template_locked\x18\x13 \x01(\bR\x15defaultTemplateLocked\"\x80\x01\n" +
 	"\x15CreateCategoryRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
 	"\x04slug\x18\x02 \x01(\tR\x04slug\x12\x1b\n" +
@@ -2071,6 +2189,12 @@ const file_steward_core_v1_category_proto_rawDesc = "" +
 	"\ractor_user_id\x18\x04 \x01(\tR\vactorUserId\x122\n" +
 	"\x15default_template_none\x18\x05 \x01(\bR\x13defaultTemplateNone\"T\n" +
 	"\x1bSetCategoryDefaultsResponse\x125\n" +
+	"\bcategory\x18\x01 \x01(\v2\x19.steward.core.v1.CategoryR\bcategory\"l\n" +
+	"\x1eSetCategoryTemplateLockRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x16\n" +
+	"\x06locked\x18\x02 \x01(\bR\x06locked\x12\"\n" +
+	"\ractor_user_id\x18\x03 \x01(\tR\vactorUserId\"X\n" +
+	"\x1fSetCategoryTemplateLockResponse\x125\n" +
 	"\bcategory\x18\x01 \x01(\v2\x19.steward.core.v1.CategoryR\bcategory\"O\n" +
 	"\x15RenameCategoryRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
@@ -2175,13 +2299,13 @@ const file_steward_core_v1_category_proto_rawDesc = "" +
 	"\x1dRULE_SUBJECT_KIND_UNSPECIFIED\x10\x00\x12\x1e\n" +
 	"\x1aRULE_SUBJECT_KIND_EVERYONE\x10\x01\x12\x1b\n" +
 	"\x17RULE_SUBJECT_KIND_GROUP\x10\x02\x12\x1a\n" +
-	"\x16RULE_SUBJECT_KIND_USER\x10\x032\xf8\n" +
-	"\n" +
+	"\x16RULE_SUBJECT_KIND_USER\x10\x032\xf6\v\n" +
 	"\x0fCategoryService\x12a\n" +
 	"\x0eCreateCategory\x12&.steward.core.v1.CreateCategoryRequest\x1a'.steward.core.v1.CreateCategoryResponse\x12X\n" +
 	"\vGetCategory\x12#.steward.core.v1.GetCategoryRequest\x1a$.steward.core.v1.GetCategoryResponse\x12s\n" +
 	"\x14ListCategoryChildren\x12,.steward.core.v1.ListCategoryChildrenRequest\x1a-.steward.core.v1.ListCategoryChildrenResponse\x12p\n" +
-	"\x13SetCategoryDefaults\x12+.steward.core.v1.SetCategoryDefaultsRequest\x1a,.steward.core.v1.SetCategoryDefaultsResponse\x12a\n" +
+	"\x13SetCategoryDefaults\x12+.steward.core.v1.SetCategoryDefaultsRequest\x1a,.steward.core.v1.SetCategoryDefaultsResponse\x12|\n" +
+	"\x17SetCategoryTemplateLock\x12/.steward.core.v1.SetCategoryTemplateLockRequest\x1a0.steward.core.v1.SetCategoryTemplateLockResponse\x12a\n" +
 	"\x0eRenameCategory\x12&.steward.core.v1.RenameCategoryRequest\x1a'.steward.core.v1.RenameCategoryResponse\x12a\n" +
 	"\x0eDeleteCategory\x12&.steward.core.v1.DeleteCategoryRequest\x1a'.steward.core.v1.DeleteCategoryResponse\x12[\n" +
 	"\fMoveCategory\x12$.steward.core.v1.MoveCategoryRequest\x1a%.steward.core.v1.MoveCategoryResponse\x12j\n" +
@@ -2205,41 +2329,43 @@ func file_steward_core_v1_category_proto_rawDescGZIP() []byte {
 }
 
 var file_steward_core_v1_category_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
-var file_steward_core_v1_category_proto_msgTypes = make([]protoimpl.MessageInfo, 29)
+var file_steward_core_v1_category_proto_msgTypes = make([]protoimpl.MessageInfo, 31)
 var file_steward_core_v1_category_proto_goTypes = []any{
-	(AckTrigger)(0),                        // 0: steward.core.v1.AckTrigger
-	(ReviewCadence)(0),                     // 1: steward.core.v1.ReviewCadence
-	(GrantEffect)(0),                       // 2: steward.core.v1.GrantEffect
-	(RuleSubjectKind)(0),                   // 3: steward.core.v1.RuleSubjectKind
-	(*Category)(nil),                       // 4: steward.core.v1.Category
-	(*CreateCategoryRequest)(nil),          // 5: steward.core.v1.CreateCategoryRequest
-	(*CreateCategoryResponse)(nil),         // 6: steward.core.v1.CreateCategoryResponse
-	(*GetCategoryRequest)(nil),             // 7: steward.core.v1.GetCategoryRequest
-	(*GetCategoryResponse)(nil),            // 8: steward.core.v1.GetCategoryResponse
-	(*ListCategoryChildrenRequest)(nil),    // 9: steward.core.v1.ListCategoryChildrenRequest
-	(*ListCategoryChildrenResponse)(nil),   // 10: steward.core.v1.ListCategoryChildrenResponse
-	(*SetCategoryDefaultsRequest)(nil),     // 11: steward.core.v1.SetCategoryDefaultsRequest
-	(*SetCategoryDefaultsResponse)(nil),    // 12: steward.core.v1.SetCategoryDefaultsResponse
-	(*RenameCategoryRequest)(nil),          // 13: steward.core.v1.RenameCategoryRequest
-	(*RenameCategoryResponse)(nil),         // 14: steward.core.v1.RenameCategoryResponse
-	(*DeleteCategoryRequest)(nil),          // 15: steward.core.v1.DeleteCategoryRequest
-	(*DeleteCategoryResponse)(nil),         // 16: steward.core.v1.DeleteCategoryResponse
-	(*MoveCategoryRequest)(nil),            // 17: steward.core.v1.MoveCategoryRequest
-	(*MoveCategoryResponse)(nil),           // 18: steward.core.v1.MoveCategoryResponse
-	(*ReorderCategoriesRequest)(nil),       // 19: steward.core.v1.ReorderCategoriesRequest
-	(*ReorderCategoriesResponse)(nil),      // 20: steward.core.v1.ReorderCategoriesResponse
-	(*SetGovernanceRequest)(nil),           // 21: steward.core.v1.SetGovernanceRequest
-	(*SetGovernanceResponse)(nil),          // 22: steward.core.v1.SetGovernanceResponse
-	(*GetEffectiveGovernanceRequest)(nil),  // 23: steward.core.v1.GetEffectiveGovernanceRequest
-	(*GetEffectiveGovernanceResponse)(nil), // 24: steward.core.v1.GetEffectiveGovernanceResponse
-	(*CategoryRule)(nil),                   // 25: steward.core.v1.CategoryRule
-	(*GetCategoryRulesetRequest)(nil),      // 26: steward.core.v1.GetCategoryRulesetRequest
-	(*GetCategoryRulesetResponse)(nil),     // 27: steward.core.v1.GetCategoryRulesetResponse
-	(*SetCategoryRulesetRequest)(nil),      // 28: steward.core.v1.SetCategoryRulesetRequest
-	(*SetCategoryRulesetResponse)(nil),     // 29: steward.core.v1.SetCategoryRulesetResponse
-	(*RemovedCategoryRule)(nil),            // 30: steward.core.v1.RemovedCategoryRule
-	(*PurgeUserCategoryRulesRequest)(nil),  // 31: steward.core.v1.PurgeUserCategoryRulesRequest
-	(*PurgeUserCategoryRulesResponse)(nil), // 32: steward.core.v1.PurgeUserCategoryRulesResponse
+	(AckTrigger)(0),                         // 0: steward.core.v1.AckTrigger
+	(ReviewCadence)(0),                      // 1: steward.core.v1.ReviewCadence
+	(GrantEffect)(0),                        // 2: steward.core.v1.GrantEffect
+	(RuleSubjectKind)(0),                    // 3: steward.core.v1.RuleSubjectKind
+	(*Category)(nil),                        // 4: steward.core.v1.Category
+	(*CreateCategoryRequest)(nil),           // 5: steward.core.v1.CreateCategoryRequest
+	(*CreateCategoryResponse)(nil),          // 6: steward.core.v1.CreateCategoryResponse
+	(*GetCategoryRequest)(nil),              // 7: steward.core.v1.GetCategoryRequest
+	(*GetCategoryResponse)(nil),             // 8: steward.core.v1.GetCategoryResponse
+	(*ListCategoryChildrenRequest)(nil),     // 9: steward.core.v1.ListCategoryChildrenRequest
+	(*ListCategoryChildrenResponse)(nil),    // 10: steward.core.v1.ListCategoryChildrenResponse
+	(*SetCategoryDefaultsRequest)(nil),      // 11: steward.core.v1.SetCategoryDefaultsRequest
+	(*SetCategoryDefaultsResponse)(nil),     // 12: steward.core.v1.SetCategoryDefaultsResponse
+	(*SetCategoryTemplateLockRequest)(nil),  // 13: steward.core.v1.SetCategoryTemplateLockRequest
+	(*SetCategoryTemplateLockResponse)(nil), // 14: steward.core.v1.SetCategoryTemplateLockResponse
+	(*RenameCategoryRequest)(nil),           // 15: steward.core.v1.RenameCategoryRequest
+	(*RenameCategoryResponse)(nil),          // 16: steward.core.v1.RenameCategoryResponse
+	(*DeleteCategoryRequest)(nil),           // 17: steward.core.v1.DeleteCategoryRequest
+	(*DeleteCategoryResponse)(nil),          // 18: steward.core.v1.DeleteCategoryResponse
+	(*MoveCategoryRequest)(nil),             // 19: steward.core.v1.MoveCategoryRequest
+	(*MoveCategoryResponse)(nil),            // 20: steward.core.v1.MoveCategoryResponse
+	(*ReorderCategoriesRequest)(nil),        // 21: steward.core.v1.ReorderCategoriesRequest
+	(*ReorderCategoriesResponse)(nil),       // 22: steward.core.v1.ReorderCategoriesResponse
+	(*SetGovernanceRequest)(nil),            // 23: steward.core.v1.SetGovernanceRequest
+	(*SetGovernanceResponse)(nil),           // 24: steward.core.v1.SetGovernanceResponse
+	(*GetEffectiveGovernanceRequest)(nil),   // 25: steward.core.v1.GetEffectiveGovernanceRequest
+	(*GetEffectiveGovernanceResponse)(nil),  // 26: steward.core.v1.GetEffectiveGovernanceResponse
+	(*CategoryRule)(nil),                    // 27: steward.core.v1.CategoryRule
+	(*GetCategoryRulesetRequest)(nil),       // 28: steward.core.v1.GetCategoryRulesetRequest
+	(*GetCategoryRulesetResponse)(nil),      // 29: steward.core.v1.GetCategoryRulesetResponse
+	(*SetCategoryRulesetRequest)(nil),       // 30: steward.core.v1.SetCategoryRulesetRequest
+	(*SetCategoryRulesetResponse)(nil),      // 31: steward.core.v1.SetCategoryRulesetResponse
+	(*RemovedCategoryRule)(nil),             // 32: steward.core.v1.RemovedCategoryRule
+	(*PurgeUserCategoryRulesRequest)(nil),   // 33: steward.core.v1.PurgeUserCategoryRulesRequest
+	(*PurgeUserCategoryRulesResponse)(nil),  // 34: steward.core.v1.PurgeUserCategoryRulesResponse
 }
 var file_steward_core_v1_category_proto_depIdxs = []int32{
 	0,  // 0: steward.core.v1.Category.ack_triggers:type_name -> steward.core.v1.AckTrigger
@@ -2248,53 +2374,56 @@ var file_steward_core_v1_category_proto_depIdxs = []int32{
 	4,  // 3: steward.core.v1.GetCategoryResponse.category:type_name -> steward.core.v1.Category
 	4,  // 4: steward.core.v1.ListCategoryChildrenResponse.categories:type_name -> steward.core.v1.Category
 	4,  // 5: steward.core.v1.SetCategoryDefaultsResponse.category:type_name -> steward.core.v1.Category
-	4,  // 6: steward.core.v1.RenameCategoryResponse.category:type_name -> steward.core.v1.Category
-	4,  // 7: steward.core.v1.MoveCategoryResponse.category:type_name -> steward.core.v1.Category
-	4,  // 8: steward.core.v1.ReorderCategoriesResponse.categories:type_name -> steward.core.v1.Category
-	0,  // 9: steward.core.v1.SetGovernanceRequest.ack_triggers:type_name -> steward.core.v1.AckTrigger
-	1,  // 10: steward.core.v1.SetGovernanceRequest.review_cadence:type_name -> steward.core.v1.ReviewCadence
-	4,  // 11: steward.core.v1.SetGovernanceResponse.category:type_name -> steward.core.v1.Category
-	3,  // 12: steward.core.v1.CategoryRule.subject_kind:type_name -> steward.core.v1.RuleSubjectKind
-	2,  // 13: steward.core.v1.CategoryRule.read:type_name -> steward.core.v1.GrantEffect
-	2,  // 14: steward.core.v1.CategoryRule.ack:type_name -> steward.core.v1.GrantEffect
-	2,  // 15: steward.core.v1.CategoryRule.approve:type_name -> steward.core.v1.GrantEffect
-	2,  // 16: steward.core.v1.CategoryRule.author:type_name -> steward.core.v1.GrantEffect
-	25, // 17: steward.core.v1.GetCategoryRulesetResponse.rules:type_name -> steward.core.v1.CategoryRule
-	25, // 18: steward.core.v1.SetCategoryRulesetRequest.rules:type_name -> steward.core.v1.CategoryRule
-	25, // 19: steward.core.v1.SetCategoryRulesetResponse.rules:type_name -> steward.core.v1.CategoryRule
-	25, // 20: steward.core.v1.RemovedCategoryRule.rule:type_name -> steward.core.v1.CategoryRule
-	30, // 21: steward.core.v1.PurgeUserCategoryRulesResponse.rules:type_name -> steward.core.v1.RemovedCategoryRule
-	5,  // 22: steward.core.v1.CategoryService.CreateCategory:input_type -> steward.core.v1.CreateCategoryRequest
-	7,  // 23: steward.core.v1.CategoryService.GetCategory:input_type -> steward.core.v1.GetCategoryRequest
-	9,  // 24: steward.core.v1.CategoryService.ListCategoryChildren:input_type -> steward.core.v1.ListCategoryChildrenRequest
-	11, // 25: steward.core.v1.CategoryService.SetCategoryDefaults:input_type -> steward.core.v1.SetCategoryDefaultsRequest
-	13, // 26: steward.core.v1.CategoryService.RenameCategory:input_type -> steward.core.v1.RenameCategoryRequest
-	15, // 27: steward.core.v1.CategoryService.DeleteCategory:input_type -> steward.core.v1.DeleteCategoryRequest
-	17, // 28: steward.core.v1.CategoryService.MoveCategory:input_type -> steward.core.v1.MoveCategoryRequest
-	19, // 29: steward.core.v1.CategoryService.ReorderCategories:input_type -> steward.core.v1.ReorderCategoriesRequest
-	21, // 30: steward.core.v1.CategoryService.SetGovernance:input_type -> steward.core.v1.SetGovernanceRequest
-	23, // 31: steward.core.v1.CategoryService.GetEffectiveGovernance:input_type -> steward.core.v1.GetEffectiveGovernanceRequest
-	26, // 32: steward.core.v1.CategoryService.GetCategoryRuleset:input_type -> steward.core.v1.GetCategoryRulesetRequest
-	28, // 33: steward.core.v1.CategoryService.SetCategoryRuleset:input_type -> steward.core.v1.SetCategoryRulesetRequest
-	31, // 34: steward.core.v1.CategoryService.PurgeUserCategoryRules:input_type -> steward.core.v1.PurgeUserCategoryRulesRequest
-	6,  // 35: steward.core.v1.CategoryService.CreateCategory:output_type -> steward.core.v1.CreateCategoryResponse
-	8,  // 36: steward.core.v1.CategoryService.GetCategory:output_type -> steward.core.v1.GetCategoryResponse
-	10, // 37: steward.core.v1.CategoryService.ListCategoryChildren:output_type -> steward.core.v1.ListCategoryChildrenResponse
-	12, // 38: steward.core.v1.CategoryService.SetCategoryDefaults:output_type -> steward.core.v1.SetCategoryDefaultsResponse
-	14, // 39: steward.core.v1.CategoryService.RenameCategory:output_type -> steward.core.v1.RenameCategoryResponse
-	16, // 40: steward.core.v1.CategoryService.DeleteCategory:output_type -> steward.core.v1.DeleteCategoryResponse
-	18, // 41: steward.core.v1.CategoryService.MoveCategory:output_type -> steward.core.v1.MoveCategoryResponse
-	20, // 42: steward.core.v1.CategoryService.ReorderCategories:output_type -> steward.core.v1.ReorderCategoriesResponse
-	22, // 43: steward.core.v1.CategoryService.SetGovernance:output_type -> steward.core.v1.SetGovernanceResponse
-	24, // 44: steward.core.v1.CategoryService.GetEffectiveGovernance:output_type -> steward.core.v1.GetEffectiveGovernanceResponse
-	27, // 45: steward.core.v1.CategoryService.GetCategoryRuleset:output_type -> steward.core.v1.GetCategoryRulesetResponse
-	29, // 46: steward.core.v1.CategoryService.SetCategoryRuleset:output_type -> steward.core.v1.SetCategoryRulesetResponse
-	32, // 47: steward.core.v1.CategoryService.PurgeUserCategoryRules:output_type -> steward.core.v1.PurgeUserCategoryRulesResponse
-	35, // [35:48] is the sub-list for method output_type
-	22, // [22:35] is the sub-list for method input_type
-	22, // [22:22] is the sub-list for extension type_name
-	22, // [22:22] is the sub-list for extension extendee
-	0,  // [0:22] is the sub-list for field type_name
+	4,  // 6: steward.core.v1.SetCategoryTemplateLockResponse.category:type_name -> steward.core.v1.Category
+	4,  // 7: steward.core.v1.RenameCategoryResponse.category:type_name -> steward.core.v1.Category
+	4,  // 8: steward.core.v1.MoveCategoryResponse.category:type_name -> steward.core.v1.Category
+	4,  // 9: steward.core.v1.ReorderCategoriesResponse.categories:type_name -> steward.core.v1.Category
+	0,  // 10: steward.core.v1.SetGovernanceRequest.ack_triggers:type_name -> steward.core.v1.AckTrigger
+	1,  // 11: steward.core.v1.SetGovernanceRequest.review_cadence:type_name -> steward.core.v1.ReviewCadence
+	4,  // 12: steward.core.v1.SetGovernanceResponse.category:type_name -> steward.core.v1.Category
+	3,  // 13: steward.core.v1.CategoryRule.subject_kind:type_name -> steward.core.v1.RuleSubjectKind
+	2,  // 14: steward.core.v1.CategoryRule.read:type_name -> steward.core.v1.GrantEffect
+	2,  // 15: steward.core.v1.CategoryRule.ack:type_name -> steward.core.v1.GrantEffect
+	2,  // 16: steward.core.v1.CategoryRule.approve:type_name -> steward.core.v1.GrantEffect
+	2,  // 17: steward.core.v1.CategoryRule.author:type_name -> steward.core.v1.GrantEffect
+	27, // 18: steward.core.v1.GetCategoryRulesetResponse.rules:type_name -> steward.core.v1.CategoryRule
+	27, // 19: steward.core.v1.SetCategoryRulesetRequest.rules:type_name -> steward.core.v1.CategoryRule
+	27, // 20: steward.core.v1.SetCategoryRulesetResponse.rules:type_name -> steward.core.v1.CategoryRule
+	27, // 21: steward.core.v1.RemovedCategoryRule.rule:type_name -> steward.core.v1.CategoryRule
+	32, // 22: steward.core.v1.PurgeUserCategoryRulesResponse.rules:type_name -> steward.core.v1.RemovedCategoryRule
+	5,  // 23: steward.core.v1.CategoryService.CreateCategory:input_type -> steward.core.v1.CreateCategoryRequest
+	7,  // 24: steward.core.v1.CategoryService.GetCategory:input_type -> steward.core.v1.GetCategoryRequest
+	9,  // 25: steward.core.v1.CategoryService.ListCategoryChildren:input_type -> steward.core.v1.ListCategoryChildrenRequest
+	11, // 26: steward.core.v1.CategoryService.SetCategoryDefaults:input_type -> steward.core.v1.SetCategoryDefaultsRequest
+	13, // 27: steward.core.v1.CategoryService.SetCategoryTemplateLock:input_type -> steward.core.v1.SetCategoryTemplateLockRequest
+	15, // 28: steward.core.v1.CategoryService.RenameCategory:input_type -> steward.core.v1.RenameCategoryRequest
+	17, // 29: steward.core.v1.CategoryService.DeleteCategory:input_type -> steward.core.v1.DeleteCategoryRequest
+	19, // 30: steward.core.v1.CategoryService.MoveCategory:input_type -> steward.core.v1.MoveCategoryRequest
+	21, // 31: steward.core.v1.CategoryService.ReorderCategories:input_type -> steward.core.v1.ReorderCategoriesRequest
+	23, // 32: steward.core.v1.CategoryService.SetGovernance:input_type -> steward.core.v1.SetGovernanceRequest
+	25, // 33: steward.core.v1.CategoryService.GetEffectiveGovernance:input_type -> steward.core.v1.GetEffectiveGovernanceRequest
+	28, // 34: steward.core.v1.CategoryService.GetCategoryRuleset:input_type -> steward.core.v1.GetCategoryRulesetRequest
+	30, // 35: steward.core.v1.CategoryService.SetCategoryRuleset:input_type -> steward.core.v1.SetCategoryRulesetRequest
+	33, // 36: steward.core.v1.CategoryService.PurgeUserCategoryRules:input_type -> steward.core.v1.PurgeUserCategoryRulesRequest
+	6,  // 37: steward.core.v1.CategoryService.CreateCategory:output_type -> steward.core.v1.CreateCategoryResponse
+	8,  // 38: steward.core.v1.CategoryService.GetCategory:output_type -> steward.core.v1.GetCategoryResponse
+	10, // 39: steward.core.v1.CategoryService.ListCategoryChildren:output_type -> steward.core.v1.ListCategoryChildrenResponse
+	12, // 40: steward.core.v1.CategoryService.SetCategoryDefaults:output_type -> steward.core.v1.SetCategoryDefaultsResponse
+	14, // 41: steward.core.v1.CategoryService.SetCategoryTemplateLock:output_type -> steward.core.v1.SetCategoryTemplateLockResponse
+	16, // 42: steward.core.v1.CategoryService.RenameCategory:output_type -> steward.core.v1.RenameCategoryResponse
+	18, // 43: steward.core.v1.CategoryService.DeleteCategory:output_type -> steward.core.v1.DeleteCategoryResponse
+	20, // 44: steward.core.v1.CategoryService.MoveCategory:output_type -> steward.core.v1.MoveCategoryResponse
+	22, // 45: steward.core.v1.CategoryService.ReorderCategories:output_type -> steward.core.v1.ReorderCategoriesResponse
+	24, // 46: steward.core.v1.CategoryService.SetGovernance:output_type -> steward.core.v1.SetGovernanceResponse
+	26, // 47: steward.core.v1.CategoryService.GetEffectiveGovernance:output_type -> steward.core.v1.GetEffectiveGovernanceResponse
+	29, // 48: steward.core.v1.CategoryService.GetCategoryRuleset:output_type -> steward.core.v1.GetCategoryRulesetResponse
+	31, // 49: steward.core.v1.CategoryService.SetCategoryRuleset:output_type -> steward.core.v1.SetCategoryRulesetResponse
+	34, // 50: steward.core.v1.CategoryService.PurgeUserCategoryRules:output_type -> steward.core.v1.PurgeUserCategoryRulesResponse
+	37, // [37:51] is the sub-list for method output_type
+	23, // [23:37] is the sub-list for method input_type
+	23, // [23:23] is the sub-list for extension type_name
+	23, // [23:23] is the sub-list for extension extendee
+	0,  // [0:23] is the sub-list for field type_name
 }
 
 func init() { file_steward_core_v1_category_proto_init() }
@@ -2308,7 +2437,7 @@ func file_steward_core_v1_category_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_steward_core_v1_category_proto_rawDesc), len(file_steward_core_v1_category_proto_rawDesc)),
 			NumEnums:      4,
-			NumMessages:   29,
+			NumMessages:   31,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

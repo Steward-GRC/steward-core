@@ -257,6 +257,12 @@ func (h *PolicyHandler) CreatePolicy(ctx context.Context, req *corev1.CreatePoli
 		return nil, status.Error(codes.Internal, "get category failed")
 	}
 
+	// A locked category (or one inheriting a locked template) only takes its own template. Asking for
+	// none inherits it, so only a different template is refused.
+	if err := h.checkTemplateLock(ctx, homeGID, tplID, false); err != nil {
+		return nil, err
+	}
+
 	p, err := domain.NewPolicy(req.GetTitle(), homeGID, sensitivityFromProto(req.GetSensitivity()), ownerUID)
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "%v", err)
@@ -1761,6 +1767,31 @@ func (h *PolicyHandler) GetEffectiveTemplate(ctx context.Context, req *corev1.Ge
 	}, nil
 }
 
+// checkTemplateLock refuses asking for freeform (none) or a template other than the one the home
+// category's chain locks, with the coded CATEGORY_TEMPLATE_LOCKED. Asking for neither inherits the
+// locked template and passes. A chain that cannot be read fails closed rather than skipping the lock.
+func (h *PolicyHandler) checkTemplateLock(ctx context.Context, homeCategoryID, requested uuid.UUID, none bool) error {
+	chain, err := h.categoryStore.AncestorChain(ctx, homeCategoryID)
+	if err != nil {
+		return storeUnavailable(ctx, "ancestor_chain", err)
+	}
+	locked := domain.TemplateLockViolation(chain, requested, none)
+	if locked == uuid.Nil {
+		logger.Ctx(ctx).Debug("template lock: allowed", log.F("category_id", homeCategoryID.String()),
+			log.F("requested", requested.String()), log.F("none", none))
+		return nil
+	}
+	name := locked.String()
+	if t, terr := h.tplStore.GetTemplate(ctx, locked); terr == nil && t.Name != "" {
+		name = t.Name
+	} else if terr != nil {
+		logger.Ctx(ctx).Debug("template lock: template name lookup failed", log.F("template_id", locked.String()), log.F("error", terr.Error()))
+	}
+	logger.Ctx(ctx).Debug("template lock: refused", log.F("category_id", homeCategoryID.String()),
+		log.F("locked_template_id", locked.String()), log.F("requested", requested.String()), log.F("none", none))
+	return errcodes.Error(ctx, errcodes.CategoryTemplateLocked(name))
+}
+
 // SetPolicyTemplate handles PolicyService.SetPolicyTemplate: none for freeform, a template_id for
 // that template, or neither to inherit.
 func (h *PolicyHandler) SetPolicyTemplate(ctx context.Context, req *corev1.SetPolicyTemplateRequest) (*corev1.SetPolicyTemplateResponse, error) {
@@ -1774,6 +1805,16 @@ func (h *PolicyHandler) SetPolicyTemplate(ctx context.Context, req *corev1.SetPo
 	}
 	if _, err := parseOptionalUUID(req.GetActorUserId()); err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid actor_user_id: %v", err)
+	}
+	cur, err := h.store.GetPolicy(ctx, pid)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, status.Error(codes.NotFound, "policy not found")
+		}
+		return nil, storeUnavailable(ctx, "get_policy", err)
+	}
+	if err := h.checkTemplateLock(ctx, cur.HomeCategoryID, tplID, req.GetNone()); err != nil {
+		return nil, err
 	}
 	p, err := h.store.SetTemplate(ctx, pid, tplID, req.GetNone())
 	if err != nil {
