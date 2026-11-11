@@ -24,7 +24,7 @@ const (
 	CodeStoreUnavailable     = 4001
 	CodeCategoryNotDeletable = 4002
 	CodeInvalidCategoryRule  = 4003
-	CodeMoveRefused          = 4004
+	CodeMoveRefused          = 4006
 )
 
 // Entries returns the registry entries.

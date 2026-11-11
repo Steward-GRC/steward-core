@@ -97,6 +97,6 @@ func TestMoveRefusedRoundTrip(t *testing.T) {
 	info, ok := apperrgrpc.FromStatus(st)
 	require.True(t, ok, "status must carry ErrorInfo")
 	require.Equal(t, "MOVE_REFUSED", info.Symbol)
-	require.Equal(t, 4004, info.Code)
+	require.Equal(t, 4006, info.Code)
 	require.Equal(t, "CATEGORY_REFUSES_TYPE", info.Metadata["reason"])
 }
