@@ -16,7 +16,7 @@ import (
 	"github.com/Steward-GRC/steward-core/internal/domain"
 )
 
-// Policy text search (steward-core#30). The index is policy_search (migration 0027), kept by
+// Policy text search (steward-core#30). The index is policy_search (migration 0033), kept by
 // triggers; this file reads it. Neither the query text nor any policy text is ever logged.
 
 const (
