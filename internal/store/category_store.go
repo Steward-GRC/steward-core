@@ -252,6 +252,7 @@ func (s *CategoryStore) Get(ctx context.Context, id uuid.UUID) (domain.Category,
 		exclusionSet      bool // true when the DB column is non-NULL
 		ackEveryone       bool
 		ackEveryoneSet    bool // true when the DB column is non-NULL
+		documentTypes     string
 	)
 	err := s.db.Querier().QueryRow(ctx,
 		`SELECT id, parent_id, name, slug,
@@ -261,7 +262,7 @@ func (s *CategoryStore) Get(ctx context.Context, id uuid.UUID) (domain.Category,
 		        ack_triggers, review_cadence, review_date,
 		        exclusion_group_ids IS NOT NULL, COALESCE(exclusion_group_ids, '{}'),
 		        ack_everyone IS NOT NULL, COALESCE(ack_everyone, false),
-		        created_at, updated_at, order_index
+		        created_at, updated_at, order_index, document_types
 		 FROM categories WHERE id = $1`, id,
 	).Scan(&g.ID, &parentID, &g.Name, &g.Slug,
 		&templateID, &g.DefaultTemplateNone, &workflowID,
@@ -270,10 +271,11 @@ func (s *CategoryStore) Get(ctx context.Context, id uuid.UUID) (domain.Category,
 		&ackTriggers, &reviewCad, &reviewDate,
 		&exclusionSet, &exclusionGroupIDs,
 		&ackEveryoneSet, &ackEveryone,
-		&g.CreatedAt, &g.UpdatedAt, &g.OrderIndex)
+		&g.CreatedAt, &g.UpdatedAt, &g.OrderIndex, &documentTypes)
 	if err != nil {
 		return domain.Category{}, fmt.Errorf("CategoryStore.Get: %w", err)
 	}
+	g.DocumentTypes = domain.CategoryDocumentTypes(documentTypes)
 	if parentID != nil {
 		g.ParentID = *parentID
 	}
@@ -311,14 +313,14 @@ func (s *CategoryStore) AncestorChain(ctx context.Context, categoryID uuid.UUID)
 		         default_template_id, default_template_none, default_workflow_id,
 		         owners, audience_group_ids, ack_triggers, review_cadence, review_date,
 		         exclusion_group_ids, ack_everyone,
-		         created_at, updated_at, order_index, 0 AS depth
+		         created_at, updated_at, order_index, document_types, 0 AS depth
 		  FROM categories WHERE id = $1
 		  UNION ALL
 		  SELECT g.id, g.parent_id, g.name, g.slug,
 		         g.default_template_id, g.default_template_none, g.default_workflow_id,
 		         g.owners, g.audience_group_ids, g.ack_triggers, g.review_cadence, g.review_date,
 		         g.exclusion_group_ids, g.ack_everyone,
-		         g.created_at, g.updated_at, g.order_index, c.depth + 1
+		         g.created_at, g.updated_at, g.order_index, g.document_types, c.depth + 1
 		  FROM categories g JOIN chain c ON g.id = c.parent_id
 		)
 		SELECT id, parent_id, name, slug,
@@ -328,7 +330,7 @@ func (s *CategoryStore) AncestorChain(ctx context.Context, categoryID uuid.UUID)
 		       ack_triggers, review_cadence, review_date,
 		       exclusion_group_ids IS NOT NULL, COALESCE(exclusion_group_ids, '{}'),
 		       ack_everyone IS NOT NULL, COALESCE(ack_everyone, false),
-		       created_at, updated_at, order_index
+		       created_at, updated_at, order_index, document_types
 		FROM chain
 		ORDER BY depth ASC`, categoryID)
 	if err != nil {
@@ -348,7 +350,7 @@ func (s *CategoryStore) ListChildren(ctx context.Context, parentID uuid.UUID) ([
 	                     ack_triggers, review_cadence, review_date,
 	                     exclusion_group_ids IS NOT NULL, COALESCE(exclusion_group_ids, '{}'),
 	                     ack_everyone IS NOT NULL, COALESCE(ack_everyone, false),
-	                     created_at, updated_at, order_index
+	                     created_at, updated_at, order_index, document_types
 	              FROM categories `
 	var (
 		query string
@@ -727,6 +729,103 @@ func (s *CategoryStore) SetGovernance(
 	return s.Get(ctx, id)
 }
 
+// ErrCategoryHoldsDocuments means a narrowing would leave documents in a category that no longer
+// accepts their type. The error carries the counts as a *StrandedDocumentsError.
+var ErrCategoryHoldsDocuments = errors.New("category holds documents the new document types would not accept")
+
+// StrandedDocumentsError says how many live documents of each type a refused narrowing would have
+// left in the category. It matches ErrCategoryHoldsDocuments.
+type StrandedDocumentsError struct {
+	Policies   int
+	Procedures int
+}
+
+func (e *StrandedDocumentsError) Error() string {
+	return fmt.Sprintf("%v (%d policies, %d procedures)", ErrCategoryHoldsDocuments, e.Policies, e.Procedures)
+}
+
+// Is makes errors.Is(err, ErrCategoryHoldsDocuments) true.
+func (e *StrandedDocumentsError) Is(target error) bool { return target == ErrCategoryHoldsDocuments }
+
+// DocumentCounts is how many live (not retired, published or draft) policies and procedures a
+// category holds.
+type DocumentCounts struct {
+	Policies   int
+	Procedures int
+}
+
+// countDocuments counts the live documents whose home is categoryID.
+func countDocuments(ctx context.Context, q interface {
+	QueryRow(context.Context, string, ...any) pgx.Row
+}, categoryID uuid.UUID) (DocumentCounts, error) {
+	var c DocumentCounts
+	err := q.QueryRow(ctx, `
+		SELECT count(*) FILTER (WHERE document_type = 'policy'),
+		       count(*) FILTER (WHERE document_type = 'procedure')
+		  FROM policies
+		 WHERE home_category_id = $1 AND retired_at IS NULL`, categoryID).Scan(&c.Policies, &c.Procedures)
+	return c, err
+}
+
+// CountDocuments returns how many live policies and procedures the category holds, or
+// ErrCategoryNotFound.
+func (s *CategoryStore) CountDocuments(ctx context.Context, categoryID uuid.UUID) (DocumentCounts, error) {
+	var exists bool
+	if err := s.db.Querier().QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM categories WHERE id = $1)`, categoryID).Scan(&exists); err != nil {
+		return DocumentCounts{}, fmt.Errorf("CategoryStore.CountDocuments exists: %w", err)
+	}
+	if !exists {
+		return DocumentCounts{}, fmt.Errorf("CategoryStore.CountDocuments %s: %w", categoryID, ErrCategoryNotFound)
+	}
+	c, err := countDocuments(ctx, s.db.Querier(), categoryID)
+	if err != nil {
+		return DocumentCounts{}, fmt.Errorf("CategoryStore.CountDocuments: %w", err)
+	}
+	return c, nil
+}
+
+// SetDocumentTypes sets which document types the category takes. A narrowing is refused with a
+// *StrandedDocumentsError (ErrCategoryHoldsDocuments) while live documents of a removed type sit in
+// the category; widening, or setting the same value, always passes. The category row is locked for
+// the check and the write, and policy creates and moves lock it for share, so a document cannot
+// slip in between. Returns ErrCategoryNotFound for an unknown id.
+func (s *CategoryStore) SetDocumentTypes(ctx context.Context, id uuid.UUID, types domain.CategoryDocumentTypes) (domain.Category, error) {
+	if types == "" || !types.Valid() {
+		return domain.Category{}, fmt.Errorf("CategoryStore.SetDocumentTypes: invalid document types %q", types)
+	}
+	err := s.db.RunInTx(ctx, func(tx pgx.Tx) error {
+		var current string
+		if err := tx.QueryRow(ctx, `SELECT document_types FROM categories WHERE id = $1 FOR UPDATE`, id).Scan(&current); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return fmt.Errorf("CategoryStore.SetDocumentTypes %s: %w", id, ErrCategoryNotFound)
+			}
+			return fmt.Errorf("CategoryStore.SetDocumentTypes lock: %w", err)
+		}
+		held, err := countDocuments(ctx, tx, id)
+		if err != nil {
+			return fmt.Errorf("CategoryStore.SetDocumentTypes count: %w", err)
+		}
+		var stranded StrandedDocumentsError
+		if !types.Accepts(domain.DocumentTypePolicy) {
+			stranded.Policies = held.Policies
+		}
+		if !types.Accepts(domain.DocumentTypeProcedure) {
+			stranded.Procedures = held.Procedures
+		}
+		if stranded.Policies+stranded.Procedures > 0 {
+			return &stranded
+		}
+		if _, err := tx.Exec(ctx, `UPDATE categories SET document_types = $2, updated_at = now() WHERE id = $1`, id, string(types)); err != nil {
+			return fmt.Errorf("CategoryStore.SetDocumentTypes update: %w", err)
+		}
+		return nil
+	})
+	if err != nil {
+		return domain.Category{}, err
+	}
+	return s.Get(ctx, id)
+}
+
 // Subtree returns a category and all its descendants, in no set order.
 func (s *CategoryStore) Subtree(ctx context.Context, rootID uuid.UUID) ([]domain.Category, error) {
 	rows, err := s.db.Querier().Query(ctx, `
@@ -735,14 +834,14 @@ func (s *CategoryStore) Subtree(ctx context.Context, rootID uuid.UUID) ([]domain
 		         default_template_id, default_template_none, default_workflow_id,
 		         owners, audience_group_ids, ack_triggers, review_cadence, review_date,
 		         exclusion_group_ids, ack_everyone,
-		         created_at, updated_at, order_index
+		         created_at, updated_at, order_index, document_types
 		  FROM categories WHERE id = $1
 		  UNION ALL
 		  SELECT g.id, g.parent_id, g.name, g.slug,
 		         g.default_template_id, g.default_template_none, g.default_workflow_id,
 		         g.owners, g.audience_group_ids, g.ack_triggers, g.review_cadence, g.review_date,
 		         g.exclusion_group_ids, g.ack_everyone,
-		         g.created_at, g.updated_at, g.order_index
+		         g.created_at, g.updated_at, g.order_index, g.document_types
 		  FROM categories g JOIN tree t ON g.parent_id = t.id
 		)
 		SELECT id, parent_id, name, slug,
@@ -752,7 +851,7 @@ func (s *CategoryStore) Subtree(ctx context.Context, rootID uuid.UUID) ([]domain
 		       ack_triggers, review_cadence, review_date,
 		       exclusion_group_ids IS NOT NULL, COALESCE(exclusion_group_ids, '{}'),
 		       ack_everyone IS NOT NULL, COALESCE(ack_everyone, false),
-		       created_at, updated_at, order_index
+		       created_at, updated_at, order_index, document_types
 		FROM tree`, rootID)
 	if err != nil {
 		return nil, fmt.Errorf("CategoryStore.Subtree: %w", err)
@@ -835,6 +934,7 @@ func scanCategories(rows interface {
 			exclusionGroupIDs pgtype.FlatArray[string]
 			ackEveryone       bool
 			ackEveryoneSet    bool
+			documentTypes     string
 		)
 		if err := rows.Scan(&g.ID, &parentID, &g.Name, &g.Slug,
 			&templateID, &g.DefaultTemplateNone, &workflowID,
@@ -843,9 +943,10 @@ func scanCategories(rows interface {
 			&ackTriggers, &reviewCad, &reviewDate,
 			&exclusionSet, &exclusionGroupIDs,
 			&ackEveryoneSet, &ackEveryone,
-			&g.CreatedAt, &g.UpdatedAt, &g.OrderIndex); err != nil {
+			&g.CreatedAt, &g.UpdatedAt, &g.OrderIndex, &documentTypes); err != nil {
 			return nil, err
 		}
+		g.DocumentTypes = domain.CategoryDocumentTypes(documentTypes)
 		if parentID != nil {
 			g.ParentID = *parentID
 		}

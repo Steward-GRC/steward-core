@@ -22,19 +22,21 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	CategoryService_CreateCategory_FullMethodName         = "/steward.core.v1.CategoryService/CreateCategory"
-	CategoryService_GetCategory_FullMethodName            = "/steward.core.v1.CategoryService/GetCategory"
-	CategoryService_ListCategoryChildren_FullMethodName   = "/steward.core.v1.CategoryService/ListCategoryChildren"
-	CategoryService_SetCategoryDefaults_FullMethodName    = "/steward.core.v1.CategoryService/SetCategoryDefaults"
-	CategoryService_RenameCategory_FullMethodName         = "/steward.core.v1.CategoryService/RenameCategory"
-	CategoryService_DeleteCategory_FullMethodName         = "/steward.core.v1.CategoryService/DeleteCategory"
-	CategoryService_MoveCategory_FullMethodName           = "/steward.core.v1.CategoryService/MoveCategory"
-	CategoryService_ReorderCategories_FullMethodName      = "/steward.core.v1.CategoryService/ReorderCategories"
-	CategoryService_SetGovernance_FullMethodName          = "/steward.core.v1.CategoryService/SetGovernance"
-	CategoryService_GetEffectiveGovernance_FullMethodName = "/steward.core.v1.CategoryService/GetEffectiveGovernance"
-	CategoryService_GetCategoryRuleset_FullMethodName     = "/steward.core.v1.CategoryService/GetCategoryRuleset"
-	CategoryService_SetCategoryRuleset_FullMethodName     = "/steward.core.v1.CategoryService/SetCategoryRuleset"
-	CategoryService_PurgeUserCategoryRules_FullMethodName = "/steward.core.v1.CategoryService/PurgeUserCategoryRules"
+	CategoryService_CreateCategory_FullMethodName           = "/steward.core.v1.CategoryService/CreateCategory"
+	CategoryService_GetCategory_FullMethodName              = "/steward.core.v1.CategoryService/GetCategory"
+	CategoryService_ListCategoryChildren_FullMethodName     = "/steward.core.v1.CategoryService/ListCategoryChildren"
+	CategoryService_SetCategoryDefaults_FullMethodName      = "/steward.core.v1.CategoryService/SetCategoryDefaults"
+	CategoryService_RenameCategory_FullMethodName           = "/steward.core.v1.CategoryService/RenameCategory"
+	CategoryService_DeleteCategory_FullMethodName           = "/steward.core.v1.CategoryService/DeleteCategory"
+	CategoryService_MoveCategory_FullMethodName             = "/steward.core.v1.CategoryService/MoveCategory"
+	CategoryService_ReorderCategories_FullMethodName        = "/steward.core.v1.CategoryService/ReorderCategories"
+	CategoryService_SetCategoryDocumentTypes_FullMethodName = "/steward.core.v1.CategoryService/SetCategoryDocumentTypes"
+	CategoryService_CountCategoryDocuments_FullMethodName   = "/steward.core.v1.CategoryService/CountCategoryDocuments"
+	CategoryService_SetGovernance_FullMethodName            = "/steward.core.v1.CategoryService/SetGovernance"
+	CategoryService_GetEffectiveGovernance_FullMethodName   = "/steward.core.v1.CategoryService/GetEffectiveGovernance"
+	CategoryService_GetCategoryRuleset_FullMethodName       = "/steward.core.v1.CategoryService/GetCategoryRuleset"
+	CategoryService_SetCategoryRuleset_FullMethodName       = "/steward.core.v1.CategoryService/SetCategoryRuleset"
+	CategoryService_PurgeUserCategoryRules_FullMethodName   = "/steward.core.v1.CategoryService/PurgeUserCategoryRules"
 )
 
 // CategoryServiceClient is the client API for CategoryService service.
@@ -54,6 +56,11 @@ type CategoryServiceClient interface {
 	// ReorderCategories sets the order of one parent's children. It is
 	// InvalidArgument when the list is not every child exactly once.
 	ReorderCategories(ctx context.Context, in *ReorderCategoriesRequest, opts ...grpc.CallOption) (*ReorderCategoriesResponse, error)
+	// SetCategoryDocumentTypes sets which document types the category takes.
+	SetCategoryDocumentTypes(ctx context.Context, in *SetCategoryDocumentTypesRequest, opts ...grpc.CallOption) (*SetCategoryDocumentTypesResponse, error)
+	// CountCategoryDocuments counts a category's live policies and procedures,
+	// for the check before a narrowing.
+	CountCategoryDocuments(ctx context.Context, in *CountCategoryDocumentsRequest, opts ...grpc.CallOption) (*CountCategoryDocumentsResponse, error)
 	SetGovernance(ctx context.Context, in *SetGovernanceRequest, opts ...grpc.CallOption) (*SetGovernanceResponse, error)
 	GetEffectiveGovernance(ctx context.Context, in *GetEffectiveGovernanceRequest, opts ...grpc.CallOption) (*GetEffectiveGovernanceResponse, error)
 	GetCategoryRuleset(ctx context.Context, in *GetCategoryRulesetRequest, opts ...grpc.CallOption) (*GetCategoryRulesetResponse, error)
@@ -155,6 +162,26 @@ func (c *categoryServiceClient) ReorderCategories(ctx context.Context, in *Reord
 	return out, nil
 }
 
+func (c *categoryServiceClient) SetCategoryDocumentTypes(ctx context.Context, in *SetCategoryDocumentTypesRequest, opts ...grpc.CallOption) (*SetCategoryDocumentTypesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SetCategoryDocumentTypesResponse)
+	err := c.cc.Invoke(ctx, CategoryService_SetCategoryDocumentTypes_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *categoryServiceClient) CountCategoryDocuments(ctx context.Context, in *CountCategoryDocumentsRequest, opts ...grpc.CallOption) (*CountCategoryDocumentsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CountCategoryDocumentsResponse)
+	err := c.cc.Invoke(ctx, CategoryService_CountCategoryDocuments_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *categoryServiceClient) SetGovernance(ctx context.Context, in *SetGovernanceRequest, opts ...grpc.CallOption) (*SetGovernanceResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(SetGovernanceResponse)
@@ -222,6 +249,11 @@ type CategoryServiceServer interface {
 	// ReorderCategories sets the order of one parent's children. It is
 	// InvalidArgument when the list is not every child exactly once.
 	ReorderCategories(context.Context, *ReorderCategoriesRequest) (*ReorderCategoriesResponse, error)
+	// SetCategoryDocumentTypes sets which document types the category takes.
+	SetCategoryDocumentTypes(context.Context, *SetCategoryDocumentTypesRequest) (*SetCategoryDocumentTypesResponse, error)
+	// CountCategoryDocuments counts a category's live policies and procedures,
+	// for the check before a narrowing.
+	CountCategoryDocuments(context.Context, *CountCategoryDocumentsRequest) (*CountCategoryDocumentsResponse, error)
 	SetGovernance(context.Context, *SetGovernanceRequest) (*SetGovernanceResponse, error)
 	GetEffectiveGovernance(context.Context, *GetEffectiveGovernanceRequest) (*GetEffectiveGovernanceResponse, error)
 	GetCategoryRuleset(context.Context, *GetCategoryRulesetRequest) (*GetCategoryRulesetResponse, error)
@@ -266,6 +298,12 @@ func (UnimplementedCategoryServiceServer) MoveCategory(context.Context, *MoveCat
 }
 func (UnimplementedCategoryServiceServer) ReorderCategories(context.Context, *ReorderCategoriesRequest) (*ReorderCategoriesResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ReorderCategories not implemented")
+}
+func (UnimplementedCategoryServiceServer) SetCategoryDocumentTypes(context.Context, *SetCategoryDocumentTypesRequest) (*SetCategoryDocumentTypesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method SetCategoryDocumentTypes not implemented")
+}
+func (UnimplementedCategoryServiceServer) CountCategoryDocuments(context.Context, *CountCategoryDocumentsRequest) (*CountCategoryDocumentsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CountCategoryDocuments not implemented")
 }
 func (UnimplementedCategoryServiceServer) SetGovernance(context.Context, *SetGovernanceRequest) (*SetGovernanceResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method SetGovernance not implemented")
@@ -447,6 +485,42 @@ func _CategoryService_ReorderCategories_Handler(srv interface{}, ctx context.Con
 	return interceptor(ctx, in, info, handler)
 }
 
+func _CategoryService_SetCategoryDocumentTypes_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetCategoryDocumentTypesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CategoryServiceServer).SetCategoryDocumentTypes(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CategoryService_SetCategoryDocumentTypes_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CategoryServiceServer).SetCategoryDocumentTypes(ctx, req.(*SetCategoryDocumentTypesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CategoryService_CountCategoryDocuments_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CountCategoryDocumentsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CategoryServiceServer).CountCategoryDocuments(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CategoryService_CountCategoryDocuments_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CategoryServiceServer).CountCategoryDocuments(ctx, req.(*CountCategoryDocumentsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _CategoryService_SetGovernance_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(SetGovernanceRequest)
 	if err := dec(in); err != nil {
@@ -575,6 +649,14 @@ var CategoryService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ReorderCategories",
 			Handler:    _CategoryService_ReorderCategories_Handler,
+		},
+		{
+			MethodName: "SetCategoryDocumentTypes",
+			Handler:    _CategoryService_SetCategoryDocumentTypes_Handler,
+		},
+		{
+			MethodName: "CountCategoryDocuments",
+			Handler:    _CategoryService_CountCategoryDocuments_Handler,
 		},
 		{
 			MethodName: "SetGovernance",

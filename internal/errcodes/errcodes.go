@@ -8,6 +8,7 @@ package errcodes
 import (
 	"context"
 	"errors"
+	"strconv"
 	"sync"
 
 	apperr "github.com/Bugs5382/go-apperr"
@@ -24,6 +25,8 @@ const (
 	CodeStoreUnavailable     = 4001
 	CodeCategoryNotDeletable = 4002
 	CodeInvalidCategoryRule  = 4003
+	CodeCategoryRefusesType  = 4007
+	CodeCategoryHoldsDocs    = 4008
 )
 
 // Entries returns the registry entries.
@@ -39,6 +42,12 @@ func Entries() []apperr.Entry {
 		{Code: CodeInvalidCategoryRule, Symbol: "INVALID_CATEGORY_RULE", Category: apperr.CategoryInvalid,
 			Title: "category rules", Cause: "a category ruleset failed the steward-authz validation",
 			UserSafe: true, Message: "Access rule {rule} in {category} is not valid ({problem})."},
+		{Code: CodeCategoryRefusesType, Symbol: "CATEGORY_REFUSES_TYPE", Category: apperr.CategoryFailedPrecondition,
+			Title: "category document types", Cause: "a document was created in, or moved into, a category that does not accept its type",
+			UserSafe: true, Message: "Category {category} does not accept {types}. {hint}"},
+		{Code: CodeCategoryHoldsDocs, Symbol: "CATEGORY_HOLDS_DOCUMENTS", Category: apperr.CategoryFailedPrecondition,
+			Title: "category document types", Cause: "narrowing the accepted document types would strand documents already in the category",
+			UserSafe: true, Message: "Can't change what {category} accepts: it holds {count} documents the new setting would not accept ({policies} policies, {procedures} procedures). Move them to another category first."},
 	}
 }
 
@@ -78,6 +87,11 @@ func StoreUnavailable(op string, cause error) error {
 	return apperr.WithMeta(apperr.Coded(CodeStoreUnavailable, cause), apperr.Meta("op", op))
 }
 
+var (
+	errCategoryRefusesType    = errors.New("core: category does not accept this document type")
+	errCategoryHoldsDocuments = errors.New("core: category holds documents the new setting would not accept")
+)
+
 var errCategoryHasDocuments = errors.New("core: category still has documents")
 
 // CategoryNotDeletable codes a refused category delete. name is the resolved
@@ -93,6 +107,32 @@ func CategoryNotDeletable(name string, cause error) error {
 // rule and problem metadata it attached are kept.
 func InvalidCategoryRule(cause error) error {
 	return apperr.Coded(CodeInvalidCategoryRule, cause)
+}
+
+// CategoryRefusesType codes a create or move into a category that does not accept the document.
+// name is the resolved category name, docType is "policy" or "procedure" and accepts is the
+// category's setting ("policies", "procedures" or "none"). A container's message says to pick a
+// child category.
+func CategoryRefusesType(name, docType, accepts string) error {
+	plural := docType + "s"
+	if docType == "policy" {
+		plural = "policies"
+	}
+	hint := "It holds " + accepts + " only."
+	if accepts == "none" {
+		hint = "It only holds other categories. Pick a child category."
+	}
+	return apperr.WithMeta(apperr.Coded(CodeCategoryRefusesType, errCategoryRefusesType),
+		apperr.Meta("category", name), apperr.Meta("type", docType), apperr.Meta("types", plural),
+		apperr.Meta("accepts", accepts), apperr.Meta("hint", hint))
+}
+
+// CategoryHoldsDocuments codes a narrowing refused because documents of a removed type are in the
+// category; the counts say which.
+func CategoryHoldsDocuments(name string, policies, procedures int) error {
+	return apperr.WithMeta(apperr.Coded(CodeCategoryHoldsDocs, errCategoryHoldsDocuments),
+		apperr.Meta("category", name), apperr.Meta("count", strconv.Itoa(policies+procedures)),
+		apperr.Meta("policies", strconv.Itoa(policies)), apperr.Meta("procedures", strconv.Itoa(procedures)))
 }
 
 type logSink struct{ l log.Logger }

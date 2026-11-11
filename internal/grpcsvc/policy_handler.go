@@ -145,6 +145,20 @@ func docTypeFromProto(t corev1.DocumentType) domain.DocumentType {
 	}
 }
 
+// refuseCategoryType is the coded error for a document the category's document types do not take.
+func refuseCategoryType(ctx context.Context, g domain.Category, dt domain.DocumentType) error {
+	if dt == "" {
+		dt = domain.DocumentTypePolicy
+	}
+	accepts := string(g.DocumentTypes)
+	if accepts == "" {
+		accepts = string(domain.CategoryDocumentTypesBoth)
+	}
+	logger.Ctx(ctx).Debug("category refuses document type", log.F("category_id", g.ID.String()),
+		log.F("document_type", string(dt)), log.F("accepts", accepts))
+	return errcodes.Error(ctx, errcodes.CategoryRefusesType(g.Name, string(dt), accepts))
+}
+
 // docTypeToProto never sends UNSPECIFIED: a stored row always has a concrete type.
 func docTypeToProto(t domain.DocumentType) corev1.DocumentType {
 	switch t {
@@ -259,8 +273,17 @@ func (h *PolicyHandler) CreatePolicy(ctx context.Context, req *corev1.CreatePoli
 	p.TemplateID = tplID
 	p.DocumentType = docTypeFromProto(req.GetDocumentType())
 
+	// The category decides which types it holds; the store checks again inside its transaction in
+	// case the setting changed since this read.
+	if !g.DocumentTypes.Accepts(p.DocumentType) {
+		return nil, refuseCategoryType(ctx, g, p.DocumentType)
+	}
+
 	p, err = h.store.CreatePolicy(ctx, p)
 	if err != nil {
+		if errors.Is(err, store.ErrCategoryRefusesType) {
+			return nil, refuseCategoryType(ctx, g, p.DocumentType)
+		}
 		return nil, status.Errorf(codes.Internal, "create policy: %v", err)
 	}
 	if h.auditor != nil {
@@ -962,16 +985,24 @@ func (h *PolicyHandler) MovePolicy(ctx context.Context, req *corev1.MovePolicyRe
 	if cur.HomeCategoryID == dst {
 		return &corev1.MovePolicyResponse{Policy: policyToProto(cur)}, nil // no-op
 	}
-	// Existence only: the renumber reads the target's code inside the move transaction.
-	if _, err := h.categoryStore.Get(ctx, dst); err != nil {
+	// The renumber reads the target's code inside the move transaction; this read is for existence
+	// and for the kinds of document the target takes.
+	target, err := h.categoryStore.Get(ctx, dst)
+	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, status.Error(codes.NotFound, "target category not found")
 		}
 		logger.Ctx(ctx).Error(err, "get target category failed", log.F("category_id", dst.String()))
 		return nil, status.Error(codes.Internal, "get target category failed")
 	}
+	if !target.DocumentTypes.Accepts(cur.DocumentType) {
+		return nil, refuseCategoryType(ctx, target, cur.DocumentType)
+	}
 	p, err := h.store.SetHomeCategory(ctx, pid, dst)
 	if err != nil {
+		if errors.Is(err, store.ErrCategoryRefusesType) {
+			return nil, refuseCategoryType(ctx, target, cur.DocumentType)
+		}
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, status.Error(codes.NotFound, "policy not found")
 		}

@@ -22,10 +22,13 @@ import (
 
 type fakeCategoryStore struct {
 	categories map[uuid.UUID]domain.Category
+	// docs is what each category holds, for the document-types checks; the SQL is tested in the
+	// store tests.
+	docs map[uuid.UUID]store.DocumentCounts
 }
 
 func newFakeCategoryStore() *fakeCategoryStore {
-	return &fakeCategoryStore{categories: map[uuid.UUID]domain.Category{}}
+	return &fakeCategoryStore{categories: map[uuid.UUID]domain.Category{}, docs: map[uuid.UUID]store.DocumentCounts{}}
 }
 
 func (f *fakeCategoryStore) Create(_ context.Context, g domain.Category) (domain.Category, error) {
@@ -957,4 +960,32 @@ func TestListCategoryChildrenCarriesTheOrderIndex(t *testing.T) {
 	if len(resp.Categories) != 1 || resp.Categories[0].OrderIndex != 4 {
 		t.Fatalf("order_index not carried: %+v", resp.Categories)
 	}
+}
+
+func (f *fakeCategoryStore) CountDocuments(_ context.Context, id uuid.UUID) (store.DocumentCounts, error) {
+	if _, ok := f.categories[id]; !ok {
+		return store.DocumentCounts{}, store.ErrCategoryNotFound
+	}
+	return f.docs[id], nil
+}
+
+func (f *fakeCategoryStore) SetDocumentTypes(_ context.Context, id uuid.UUID, types domain.CategoryDocumentTypes) (domain.Category, error) {
+	g, ok := f.categories[id]
+	if !ok {
+		return domain.Category{}, store.ErrCategoryNotFound
+	}
+	held := f.docs[id]
+	var stranded store.StrandedDocumentsError
+	if !types.Accepts(domain.DocumentTypePolicy) {
+		stranded.Policies = held.Policies
+	}
+	if !types.Accepts(domain.DocumentTypeProcedure) {
+		stranded.Procedures = held.Procedures
+	}
+	if stranded.Policies+stranded.Procedures > 0 {
+		return domain.Category{}, &stranded
+	}
+	g.DocumentTypes = types
+	f.categories[id] = g
+	return g, nil
 }

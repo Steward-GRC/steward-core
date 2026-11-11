@@ -86,3 +86,40 @@ func TestErrorCodesDocIsCurrent(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, want, string(got), "docs/error-codes.md is stale; run UPDATE_DOCS=1 go test ./internal/errcodes")
 }
+
+func TestCategoryRefusesTypeRoundTrip(t *testing.T) {
+	st := status.Convert(errcodes.Error(context.Background(),
+		errcodes.CategoryRefusesType("Expenses", "procedure", "policies")))
+	require.Equal(t, codes.FailedPrecondition, st.Code())
+	require.Contains(t, st.Message(), "Expenses")
+	require.Contains(t, st.Message(), "procedures")
+
+	info, ok := apperrgrpc.FromStatus(st)
+	require.True(t, ok, "status must carry ErrorInfo")
+	require.Equal(t, "CATEGORY_REFUSES_TYPE", info.Symbol)
+	require.Equal(t, 4007, info.Code)
+	require.Equal(t, "Expenses", info.Metadata["category"])
+	require.Equal(t, "procedure", info.Metadata["type"])
+	require.Equal(t, "policies", info.Metadata["accepts"])
+}
+
+func TestCategoryRefusesTypeContainerSaysPickAChild(t *testing.T) {
+	st := status.Convert(errcodes.Error(context.Background(),
+		errcodes.CategoryRefusesType("Workplace", "policy", "none")))
+	require.Contains(t, st.Message(), "child category")
+}
+
+func TestCategoryHoldsDocumentsRoundTrip(t *testing.T) {
+	st := status.Convert(errcodes.Error(context.Background(), errcodes.CategoryHoldsDocuments("Expenses", 3, 2)))
+	require.Equal(t, codes.FailedPrecondition, st.Code())
+	require.Contains(t, st.Message(), "Expenses")
+	require.Contains(t, st.Message(), "5 documents")
+
+	info, ok := apperrgrpc.FromStatus(st)
+	require.True(t, ok, "status must carry ErrorInfo")
+	require.Equal(t, "CATEGORY_HOLDS_DOCUMENTS", info.Symbol)
+	require.Equal(t, 4008, info.Code)
+	require.Equal(t, "5", info.Metadata["count"])
+	require.Equal(t, "3", info.Metadata["policies"])
+	require.Equal(t, "2", info.Metadata["procedures"])
+}
