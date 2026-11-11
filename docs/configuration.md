@@ -27,6 +27,8 @@ value that doesn't parse stops the service with every problem listed; nothing fa
 | `S3_REGION` | `us-east-1` | The region the object store expects. |
 | `S3_ACCESS_KEY`, `S3_SECRET_KEY` | empty | Static object-store credentials. |
 | `S3_FORCE_PATH_STYLE` | `true` | Path-style bucket addressing, which most self-hosted stores need. |
+| `REVIEW_BODY_MAX_CHARS` | `10000` | The longest review comment, in characters. A longer one is refused. |
+| `REVIEW_QUOTE_MAX_CHARS` | `4000` | The longest text a review thread may quote, in characters. |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | `localhost:4317` | The OTLP collector for traces and metrics. |
 | `LOG_LEVEL`, `LOG_FORMAT` | go-log's defaults | `trace` to `error`; `console` locally, `json` in every cluster. |
 

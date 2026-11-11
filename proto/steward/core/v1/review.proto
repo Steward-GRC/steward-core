@@ -1,0 +1,127 @@
+// Copyright 2026 The Steward Authors
+// SPDX-License-Identifier: Apache-2.0
+
+syntax = "proto3";
+
+package steward.core.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/Steward-GRC/steward-core/gen/go/steward/core/v1;corev1";
+
+// ReviewSide is the side the caller acts on, decided by the gateway from the
+// caller's role on the version: the policy's author, or an approver (reviewer).
+// Core never looks the role up; it enforces only the rules that need no roles.
+enum ReviewSide {
+  REVIEW_SIDE_UNSPECIFIED = 0;
+  REVIEW_SIDE_AUTHOR = 1;
+  REVIEW_SIDE_REVIEWER = 2;
+}
+
+message ReviewMessage {
+  string id = 1;
+  string author_user_id = 2;
+  string body = 3;
+  google.protobuf.Timestamp created_at = 4;
+}
+
+// ReviewThread is a discussion tied to a piece of text in one policy version.
+// It is with ONE approver (approver_user_id). The starter (created_by) is the
+// only user who may delete it.
+message ReviewThread {
+  string id = 1;
+  string policy_version_id = 2;
+  // The text the thread was made on.
+  string quote = 3;
+  // Which match of the quote in the version, counting from 1.
+  int32 occurrence = 4;
+  bool resolved = 5;
+  google.protobuf.Timestamp created_at = 6;
+  string approver_user_id = 7;
+  string created_by = 8;
+  // Oldest first; the first is the one that started the thread.
+  repeated ReviewMessage messages = 9;
+  // 20 is held for the suggestion added by the suggestions work.
+  reserved 20;
+}
+
+// AddReviewThreadRequest starts a thread with its first message. For the
+// REVIEWER side approver_user_id must be the actor; for the AUTHOR side the
+// gateway has checked it names an approver who holds a seat.
+message AddReviewThreadRequest {
+  string actor_user_id = 1;
+  ReviewSide actor_side = 2;
+  string policy_version_id = 3;
+  string quote = 4;
+  int32 occurrence = 5;
+  string body = 6;
+  string approver_user_id = 7;
+  // 20 is held for the suggested text added by the suggestions work.
+  reserved 20;
+}
+
+message AddReviewThreadResponse {
+  ReviewThread thread = 1;
+}
+
+// ListReviewThreadsRequest lists a version's threads, oldest first. An empty
+// approver_user_id lists every thread (the gateway passes that for the author
+// side); otherwise only the threads with that approver.
+message ListReviewThreadsRequest {
+  string policy_version_id = 1;
+  string approver_user_id = 2;
+}
+
+message ListReviewThreadsResponse {
+  repeated ReviewThread threads = 1;
+}
+
+// ReplyReviewThreadRequest adds a message. For the REVIEWER side the actor
+// must be the thread's approver.
+message ReplyReviewThreadRequest {
+  string actor_user_id = 1;
+  ReviewSide actor_side = 2;
+  string thread_id = 3;
+  string body = 4;
+}
+
+message ReplyReviewThreadResponse {
+  ReviewThread thread = 1;
+}
+
+// SetReviewThreadResolvedRequest resolves (true) or reopens (false) a thread.
+// For the REVIEWER side the actor must be the thread's approver.
+message SetReviewThreadResolvedRequest {
+  string actor_user_id = 1;
+  ReviewSide actor_side = 2;
+  string thread_id = 3;
+  bool resolved = 4;
+}
+
+message SetReviewThreadResolvedResponse {
+  ReviewThread thread = 1;
+}
+
+// DeleteReviewThreadRequest deletes a thread and its messages. Only the user
+// who started it (created_by) may; for the REVIEWER side the actor must also
+// be the thread's approver.
+message DeleteReviewThreadRequest {
+  string actor_user_id = 1;
+  ReviewSide actor_side = 2;
+  string thread_id = 3;
+}
+
+message DeleteReviewThreadResponse {}
+
+// ReviewService keeps inline review threads on policy versions. Threads stay
+// with the version they were made on; a rejected version keeps its threads.
+// Errors: InvalidArgument (blank or too long text, occurrence < 1, bad id or
+// side), PermissionDenied (not the thread's approver, not the starter),
+// NotFound (unknown thread or version).
+service ReviewService {
+  rpc AddReviewThread(AddReviewThreadRequest) returns (AddReviewThreadResponse);
+  rpc ListReviewThreads(ListReviewThreadsRequest) returns (ListReviewThreadsResponse);
+  rpc ReplyReviewThread(ReplyReviewThreadRequest) returns (ReplyReviewThreadResponse);
+  rpc SetReviewThreadResolved(SetReviewThreadResolvedRequest) returns (SetReviewThreadResolvedResponse);
+  rpc DeleteReviewThread(DeleteReviewThreadRequest) returns (DeleteReviewThreadResponse);
+}

@@ -12,6 +12,7 @@ stubs committed in `gen/go`. Access to every RPC is enforced at the gateway; cor
 | `AppendixService` | Appendices of a draft version. |
 | `ContactService`, `DefinitionLibraryService`, `ReferenceService` | The shared libraries and each document's attachments. |
 | `RelationService` | Related links: a flat, one-way list per document. |
+| `ReviewService` | Inline review threads on a policy version, each with one approver; the gateway passes `actor_user_id` and `actor_side`. |
 | `SettingsService` | The global settings and the keyless email-service status. |
 | `EmailServiceSecretService` | Internal only: the email-service configuration with its key, for the service that sends mail. The gateway never serves it. |
 | `AssetService` | Editor images. |
