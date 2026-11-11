@@ -30,6 +30,7 @@ const (
 	PolicyAppendixService_RetireAppendix_FullMethodName          = "/steward.core.v1.PolicyAppendixService/RetireAppendix"
 	PolicyAppendixService_RestoreAppendix_FullMethodName         = "/steward.core.v1.PolicyAppendixService/RestoreAppendix"
 	PolicyAppendixService_ReorderPolicyAppendices_FullMethodName = "/steward.core.v1.PolicyAppendixService/ReorderPolicyAppendices"
+	PolicyAppendixService_CheckpointAppendixDraft_FullMethodName = "/steward.core.v1.PolicyAppendixService/CheckpointAppendixDraft"
 )
 
 // PolicyAppendixServiceClient is the client API for PolicyAppendixService service.
@@ -46,6 +47,7 @@ type PolicyAppendixServiceClient interface {
 	RetireAppendix(ctx context.Context, in *RetireAppendixRequest, opts ...grpc.CallOption) (*RetireAppendixResponse, error)
 	RestoreAppendix(ctx context.Context, in *RestoreAppendixRequest, opts ...grpc.CallOption) (*RestoreAppendixResponse, error)
 	ReorderPolicyAppendices(ctx context.Context, in *ReorderPolicyAppendicesRequest, opts ...grpc.CallOption) (*ReorderPolicyAppendicesResponse, error)
+	CheckpointAppendixDraft(ctx context.Context, in *CheckpointAppendixDraftRequest, opts ...grpc.CallOption) (*CheckpointAppendixDraftResponse, error)
 }
 
 type policyAppendixServiceClient struct {
@@ -136,6 +138,16 @@ func (c *policyAppendixServiceClient) ReorderPolicyAppendices(ctx context.Contex
 	return out, nil
 }
 
+func (c *policyAppendixServiceClient) CheckpointAppendixDraft(ctx context.Context, in *CheckpointAppendixDraftRequest, opts ...grpc.CallOption) (*CheckpointAppendixDraftResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CheckpointAppendixDraftResponse)
+	err := c.cc.Invoke(ctx, PolicyAppendixService_CheckpointAppendixDraft_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // PolicyAppendixServiceServer is the server API for PolicyAppendixService service.
 // All implementations must embed UnimplementedPolicyAppendixServiceServer
 // for forward compatibility.
@@ -150,6 +162,7 @@ type PolicyAppendixServiceServer interface {
 	RetireAppendix(context.Context, *RetireAppendixRequest) (*RetireAppendixResponse, error)
 	RestoreAppendix(context.Context, *RestoreAppendixRequest) (*RestoreAppendixResponse, error)
 	ReorderPolicyAppendices(context.Context, *ReorderPolicyAppendicesRequest) (*ReorderPolicyAppendicesResponse, error)
+	CheckpointAppendixDraft(context.Context, *CheckpointAppendixDraftRequest) (*CheckpointAppendixDraftResponse, error)
 	mustEmbedUnimplementedPolicyAppendixServiceServer()
 }
 
@@ -183,6 +196,9 @@ func (UnimplementedPolicyAppendixServiceServer) RestoreAppendix(context.Context,
 }
 func (UnimplementedPolicyAppendixServiceServer) ReorderPolicyAppendices(context.Context, *ReorderPolicyAppendicesRequest) (*ReorderPolicyAppendicesResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ReorderPolicyAppendices not implemented")
+}
+func (UnimplementedPolicyAppendixServiceServer) CheckpointAppendixDraft(context.Context, *CheckpointAppendixDraftRequest) (*CheckpointAppendixDraftResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CheckpointAppendixDraft not implemented")
 }
 func (UnimplementedPolicyAppendixServiceServer) mustEmbedUnimplementedPolicyAppendixServiceServer() {}
 func (UnimplementedPolicyAppendixServiceServer) testEmbeddedByValue()                               {}
@@ -349,6 +365,24 @@ func _PolicyAppendixService_ReorderPolicyAppendices_Handler(srv interface{}, ctx
 	return interceptor(ctx, in, info, handler)
 }
 
+func _PolicyAppendixService_CheckpointAppendixDraft_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CheckpointAppendixDraftRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PolicyAppendixServiceServer).CheckpointAppendixDraft(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PolicyAppendixService_CheckpointAppendixDraft_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PolicyAppendixServiceServer).CheckpointAppendixDraft(ctx, req.(*CheckpointAppendixDraftRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // PolicyAppendixService_ServiceDesc is the grpc.ServiceDesc for PolicyAppendixService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -387,6 +421,10 @@ var PolicyAppendixService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ReorderPolicyAppendices",
 			Handler:    _PolicyAppendixService_ReorderPolicyAppendices_Handler,
+		},
+		{
+			MethodName: "CheckpointAppendixDraft",
+			Handler:    _PolicyAppendixService_CheckpointAppendixDraft_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

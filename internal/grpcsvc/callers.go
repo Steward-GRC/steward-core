@@ -76,10 +76,10 @@ var (
 
 // CallerPolicy is core's per-method allow-list. The gateway passes the
 // signed-in user's actor on every method except the email-service secret,
-// which never reaches a browser. collab saves a draft on behalf of the editing
-// user. identity passes the admin running an account merge or delete.
-// delivery, workflow and obligations act only as themselves. Anything else is
-// refused.
+// which never reaches a browser. collab saves a draft, or checkpoints an
+// appendix draft, on behalf of the editing user. identity passes the admin
+// running an account merge or delete. delivery, workflow and obligations act
+// only as themselves. Anything else is refused.
 func CallerPolicy() workloadidentity.Policy {
 	p := workloadidentity.Policy{}
 	for _, sd := range services {
@@ -97,6 +97,7 @@ func CallerPolicy() workloadidentity.Policy {
 		}
 	}
 	p[corev1.PolicyService_UpdateDraftContent_FullMethodName][CallerCollab] = workloadidentity.OnBehalf
+	p[corev1.PolicyAppendixService_CheckpointAppendixDraft_FullMethodName][CallerCollab] = workloadidentity.OnBehalf
 	for _, m := range identityMethods {
 		p[m][CallerIdentity] = workloadidentity.OnBehalf
 	}

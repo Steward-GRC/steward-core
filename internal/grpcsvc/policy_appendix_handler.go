@@ -27,6 +27,7 @@ type policyAppendixBackend interface {
 	Get(ctx context.Context, id uuid.UUID) (domain.PolicyAppendix, error)
 	Create(ctx context.Context, policyID, actor uuid.UUID, title, contentJSON string) (domain.PolicyAppendix, error)
 	SaveDraft(ctx context.Context, id, actor uuid.UUID, title, contentJSON string) (domain.PolicyAppendix, bool, error)
+	CheckpointDraft(ctx context.Context, id, policyID, actor uuid.UUID, contentJSON string) (domain.PolicyAppendix, bool, error)
 	Publish(ctx context.Context, id, actor uuid.UUID) (domain.PolicyAppendix, error)
 	Retire(ctx context.Context, id, actor uuid.UUID) (domain.PolicyAppendix, bool, error)
 	Restore(ctx context.Context, id uuid.UUID) (domain.PolicyAppendix, bool, error)
@@ -116,7 +117,7 @@ func policyAppendixErr(ctx context.Context, op string, err error) error {
 	case errors.Is(err, store.ErrPolicyAppendixNotFound), errors.Is(err, store.ErrAppendixPolicyNotFound):
 		l.Warn("policy appendix op refused: not found", log.F("op", op), log.F("reason", err.Error()))
 		return status.Error(codes.NotFound, err.Error())
-	case errors.Is(err, store.ErrAppendixReorderMismatch):
+	case errors.Is(err, store.ErrAppendixReorderMismatch), errors.Is(err, store.ErrAppendixPolicyMismatch):
 		l.Warn("policy appendix op refused: bad order list", log.F("op", op), log.F("reason", err.Error()))
 		return status.Error(codes.InvalidArgument, err.Error())
 	case errors.Is(err, store.ErrAppendixNoDraft), errors.Is(err, store.ErrAppendixRetired):
@@ -238,6 +239,45 @@ func (h *PolicyAppendixHandler) SaveAppendixDraft(ctx context.Context, req *core
 	l.Debug("appendix draft saved", log.F("appendix_id", id.String()), log.F("draft_version_no", a.Draft().VersionNo))
 	h.audited(ctx, "appendix.saved", req.GetActorUserId(), a)
 	return &corev1.SaveAppendixDraftResponse{Appendix: policyAppendixToProto(a)}, nil
+}
+
+// CheckpointAppendixDraft handles PolicyAppendixService.CheckpointAppendixDraft:
+// the collab room saving an appendix's text on behalf of the person editing.
+// Content that is not a JSON document is a refusal (accepted=false with a
+// reason), not an error, and stores nothing. A retired appendix is
+// FailedPrecondition, as UpdateDraftContent answers a version that is no longer
+// the working copy. A checkpoint that changes nothing writes no audit event;
+// one that does writes the same event as a draft save.
+func (h *PolicyAppendixHandler) CheckpointAppendixDraft(ctx context.Context, req *corev1.CheckpointAppendixDraftRequest) (*corev1.CheckpointAppendixDraftResponse, error) {
+	l := logger.Ctx(ctx)
+	id, err := uuid.Parse(req.GetId())
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid id: %v", err)
+	}
+	pid, err := uuid.Parse(req.GetPolicyId())
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid policy_id: %v", err)
+	}
+	actor, err := parseAppendixActor(req.GetActorUserId())
+	if err != nil {
+		return nil, err
+	}
+	if err := domain.ValidateAppendixContent(req.GetContentJson()); err != nil {
+		l.Debug("appendix checkpoint refused: bad content", log.F("appendix_id", id.String()))
+		return &corev1.CheckpointAppendixDraftResponse{Accepted: false, RejectReason: err.Error()}, nil
+	}
+	l.Debug("checkpoint appendix draft", log.F("appendix_id", id.String()), log.F("policy_id", pid.String()), log.F("actor", actor.String()))
+	a, changed, err := h.store.CheckpointDraft(ctx, id, pid, actor, req.GetContentJson())
+	if err != nil {
+		return nil, policyAppendixErr(ctx, "checkpoint_appendix_draft", err)
+	}
+	if !changed {
+		l.Debug("appendix checkpoint: nothing changed, no draft made", log.F("appendix_id", id.String()))
+		return &corev1.CheckpointAppendixDraftResponse{Accepted: true}, nil
+	}
+	l.Debug("appendix checkpoint saved", log.F("appendix_id", id.String()), log.F("draft_version_no", a.Draft().VersionNo))
+	h.audited(ctx, "appendix.saved", req.GetActorUserId(), a)
+	return &corev1.CheckpointAppendixDraftResponse{Accepted: true}, nil
 }
 
 // PublishAppendix handles PolicyAppendixService.PublishAppendix.

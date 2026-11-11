@@ -1222,6 +1222,134 @@ func (x *ReorderPolicyAppendicesResponse) GetAppendices() []*PolicyAppendix {
 	return nil
 }
 
+// CheckpointAppendixDraftRequest is the collab room saving the text of an
+// appendix draft on behalf of the person editing. It has no title: an open
+// draft keeps its own, and a new draft takes the published one. policy_id must
+// be the appendix's policy.
+type CheckpointAppendixDraftRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	PolicyId      string                 `protobuf:"bytes,2,opt,name=policy_id,json=policyId,proto3" json:"policy_id,omitempty"`
+	ContentJson   string                 `protobuf:"bytes,3,opt,name=content_json,json=contentJson,proto3" json:"content_json,omitempty"`
+	ActorUserId   string                 `protobuf:"bytes,4,opt,name=actor_user_id,json=actorUserId,proto3" json:"actor_user_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CheckpointAppendixDraftRequest) Reset() {
+	*x = CheckpointAppendixDraftRequest{}
+	mi := &file_steward_core_v1_policy_appendix_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CheckpointAppendixDraftRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CheckpointAppendixDraftRequest) ProtoMessage() {}
+
+func (x *CheckpointAppendixDraftRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_steward_core_v1_policy_appendix_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CheckpointAppendixDraftRequest.ProtoReflect.Descriptor instead.
+func (*CheckpointAppendixDraftRequest) Descriptor() ([]byte, []int) {
+	return file_steward_core_v1_policy_appendix_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *CheckpointAppendixDraftRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *CheckpointAppendixDraftRequest) GetPolicyId() string {
+	if x != nil {
+		return x.PolicyId
+	}
+	return ""
+}
+
+func (x *CheckpointAppendixDraftRequest) GetContentJson() string {
+	if x != nil {
+		return x.ContentJson
+	}
+	return ""
+}
+
+func (x *CheckpointAppendixDraftRequest) GetActorUserId() string {
+	if x != nil {
+		return x.ActorUserId
+	}
+	return ""
+}
+
+// CheckpointAppendixDraftResponse says whether the text was taken. Content
+// that is not a JSON document is refused with accepted=false and a reason,
+// and nothing is stored. Content equal to the published row with no draft
+// open is accepted and makes no draft.
+type CheckpointAppendixDraftResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Accepted      bool                   `protobuf:"varint,1,opt,name=accepted,proto3" json:"accepted,omitempty"`
+	RejectReason  string                 `protobuf:"bytes,2,opt,name=reject_reason,json=rejectReason,proto3" json:"reject_reason,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CheckpointAppendixDraftResponse) Reset() {
+	*x = CheckpointAppendixDraftResponse{}
+	mi := &file_steward_core_v1_policy_appendix_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CheckpointAppendixDraftResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CheckpointAppendixDraftResponse) ProtoMessage() {}
+
+func (x *CheckpointAppendixDraftResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_steward_core_v1_policy_appendix_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CheckpointAppendixDraftResponse.ProtoReflect.Descriptor instead.
+func (*CheckpointAppendixDraftResponse) Descriptor() ([]byte, []int) {
+	return file_steward_core_v1_policy_appendix_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *CheckpointAppendixDraftResponse) GetAccepted() bool {
+	if x != nil {
+		return x.Accepted
+	}
+	return false
+}
+
+func (x *CheckpointAppendixDraftResponse) GetRejectReason() string {
+	if x != nil {
+		return x.RejectReason
+	}
+	return ""
+}
+
 var File_steward_core_v1_policy_appendix_proto protoreflect.FileDescriptor
 
 const file_steward_core_v1_policy_appendix_proto_rawDesc = "" +
@@ -1313,11 +1441,19 @@ const file_steward_core_v1_policy_appendix_proto_rawDesc = "" +
 	"\x1fReorderPolicyAppendicesResponse\x12?\n" +
 	"\n" +
 	"appendices\x18\x01 \x03(\v2\x1f.steward.core.v1.PolicyAppendixR\n" +
-	"appendices*\x86\x01\n" +
+	"appendices\"\x94\x01\n" +
+	"\x1eCheckpointAppendixDraftRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1b\n" +
+	"\tpolicy_id\x18\x02 \x01(\tR\bpolicyId\x12!\n" +
+	"\fcontent_json\x18\x03 \x01(\tR\vcontentJson\x12\"\n" +
+	"\ractor_user_id\x18\x04 \x01(\tR\vactorUserId\"b\n" +
+	"\x1fCheckpointAppendixDraftResponse\x12\x1a\n" +
+	"\baccepted\x18\x01 \x01(\bR\baccepted\x12#\n" +
+	"\rreject_reason\x18\x02 \x01(\tR\frejectReason*\x86\x01\n" +
 	"\x14AppendixVersionState\x12&\n" +
 	"\"APPENDIX_VERSION_STATE_UNSPECIFIED\x10\x00\x12 \n" +
 	"\x1cAPPENDIX_VERSION_STATE_DRAFT\x10\x01\x12$\n" +
-	" APPENDIX_VERSION_STATE_PUBLISHED\x10\x022\x86\a\n" +
+	" APPENDIX_VERSION_STATE_PUBLISHED\x10\x022\x84\b\n" +
 	"\x15PolicyAppendixService\x12s\n" +
 	"\x14ListPolicyAppendices\x12,.steward.core.v1.ListPolicyAppendicesRequest\x1a-.steward.core.v1.ListPolicyAppendicesResponse\x12j\n" +
 	"\x11GetPolicyAppendix\x12).steward.core.v1.GetPolicyAppendixRequest\x1a*.steward.core.v1.GetPolicyAppendixResponse\x12s\n" +
@@ -1326,7 +1462,8 @@ const file_steward_core_v1_policy_appendix_proto_rawDesc = "" +
 	"\x0fPublishAppendix\x12'.steward.core.v1.PublishAppendixRequest\x1a(.steward.core.v1.PublishAppendixResponse\x12a\n" +
 	"\x0eRetireAppendix\x12&.steward.core.v1.RetireAppendixRequest\x1a'.steward.core.v1.RetireAppendixResponse\x12d\n" +
 	"\x0fRestoreAppendix\x12'.steward.core.v1.RestoreAppendixRequest\x1a(.steward.core.v1.RestoreAppendixResponse\x12|\n" +
-	"\x17ReorderPolicyAppendices\x12/.steward.core.v1.ReorderPolicyAppendicesRequest\x1a0.steward.core.v1.ReorderPolicyAppendicesResponseBCZAgithub.com/Steward-GRC/steward-core/gen/go/steward/core/v1;corev1b\x06proto3"
+	"\x17ReorderPolicyAppendices\x12/.steward.core.v1.ReorderPolicyAppendicesRequest\x1a0.steward.core.v1.ReorderPolicyAppendicesResponse\x12|\n" +
+	"\x17CheckpointAppendixDraft\x12/.steward.core.v1.CheckpointAppendixDraftRequest\x1a0.steward.core.v1.CheckpointAppendixDraftResponseBCZAgithub.com/Steward-GRC/steward-core/gen/go/steward/core/v1;corev1b\x06proto3"
 
 var (
 	file_steward_core_v1_policy_appendix_proto_rawDescOnce sync.Once
@@ -1341,7 +1478,7 @@ func file_steward_core_v1_policy_appendix_proto_rawDescGZIP() []byte {
 }
 
 var file_steward_core_v1_policy_appendix_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_steward_core_v1_policy_appendix_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
+var file_steward_core_v1_policy_appendix_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
 var file_steward_core_v1_policy_appendix_proto_goTypes = []any{
 	(AppendixVersionState)(0),               // 0: steward.core.v1.AppendixVersionState
 	(*AppendixVersion)(nil),                 // 1: steward.core.v1.AppendixVersion
@@ -1363,15 +1500,17 @@ var file_steward_core_v1_policy_appendix_proto_goTypes = []any{
 	(*RestoreAppendixResponse)(nil),         // 17: steward.core.v1.RestoreAppendixResponse
 	(*ReorderPolicyAppendicesRequest)(nil),  // 18: steward.core.v1.ReorderPolicyAppendicesRequest
 	(*ReorderPolicyAppendicesResponse)(nil), // 19: steward.core.v1.ReorderPolicyAppendicesResponse
-	(*timestamppb.Timestamp)(nil),           // 20: google.protobuf.Timestamp
+	(*CheckpointAppendixDraftRequest)(nil),  // 20: steward.core.v1.CheckpointAppendixDraftRequest
+	(*CheckpointAppendixDraftResponse)(nil), // 21: steward.core.v1.CheckpointAppendixDraftResponse
+	(*timestamppb.Timestamp)(nil),           // 22: google.protobuf.Timestamp
 }
 var file_steward_core_v1_policy_appendix_proto_depIdxs = []int32{
 	0,  // 0: steward.core.v1.AppendixVersion.state:type_name -> steward.core.v1.AppendixVersionState
-	20, // 1: steward.core.v1.AppendixVersion.created_at:type_name -> google.protobuf.Timestamp
-	20, // 2: steward.core.v1.AppendixVersion.updated_at:type_name -> google.protobuf.Timestamp
-	20, // 3: steward.core.v1.AppendixVersion.published_at:type_name -> google.protobuf.Timestamp
+	22, // 1: steward.core.v1.AppendixVersion.created_at:type_name -> google.protobuf.Timestamp
+	22, // 2: steward.core.v1.AppendixVersion.updated_at:type_name -> google.protobuf.Timestamp
+	22, // 3: steward.core.v1.AppendixVersion.published_at:type_name -> google.protobuf.Timestamp
 	0,  // 4: steward.core.v1.AppendixVersionInfo.state:type_name -> steward.core.v1.AppendixVersionState
-	20, // 5: steward.core.v1.PolicyAppendix.retired_at:type_name -> google.protobuf.Timestamp
+	22, // 5: steward.core.v1.PolicyAppendix.retired_at:type_name -> google.protobuf.Timestamp
 	1,  // 6: steward.core.v1.PolicyAppendix.published:type_name -> steward.core.v1.AppendixVersion
 	1,  // 7: steward.core.v1.PolicyAppendix.draft:type_name -> steward.core.v1.AppendixVersion
 	2,  // 8: steward.core.v1.PolicyAppendix.versions:type_name -> steward.core.v1.AppendixVersionInfo
@@ -1392,16 +1531,18 @@ var file_steward_core_v1_policy_appendix_proto_depIdxs = []int32{
 	14, // 23: steward.core.v1.PolicyAppendixService.RetireAppendix:input_type -> steward.core.v1.RetireAppendixRequest
 	16, // 24: steward.core.v1.PolicyAppendixService.RestoreAppendix:input_type -> steward.core.v1.RestoreAppendixRequest
 	18, // 25: steward.core.v1.PolicyAppendixService.ReorderPolicyAppendices:input_type -> steward.core.v1.ReorderPolicyAppendicesRequest
-	5,  // 26: steward.core.v1.PolicyAppendixService.ListPolicyAppendices:output_type -> steward.core.v1.ListPolicyAppendicesResponse
-	7,  // 27: steward.core.v1.PolicyAppendixService.GetPolicyAppendix:output_type -> steward.core.v1.GetPolicyAppendixResponse
-	9,  // 28: steward.core.v1.PolicyAppendixService.CreatePolicyAppendix:output_type -> steward.core.v1.CreatePolicyAppendixResponse
-	11, // 29: steward.core.v1.PolicyAppendixService.SaveAppendixDraft:output_type -> steward.core.v1.SaveAppendixDraftResponse
-	13, // 30: steward.core.v1.PolicyAppendixService.PublishAppendix:output_type -> steward.core.v1.PublishAppendixResponse
-	15, // 31: steward.core.v1.PolicyAppendixService.RetireAppendix:output_type -> steward.core.v1.RetireAppendixResponse
-	17, // 32: steward.core.v1.PolicyAppendixService.RestoreAppendix:output_type -> steward.core.v1.RestoreAppendixResponse
-	19, // 33: steward.core.v1.PolicyAppendixService.ReorderPolicyAppendices:output_type -> steward.core.v1.ReorderPolicyAppendicesResponse
-	26, // [26:34] is the sub-list for method output_type
-	18, // [18:26] is the sub-list for method input_type
+	20, // 26: steward.core.v1.PolicyAppendixService.CheckpointAppendixDraft:input_type -> steward.core.v1.CheckpointAppendixDraftRequest
+	5,  // 27: steward.core.v1.PolicyAppendixService.ListPolicyAppendices:output_type -> steward.core.v1.ListPolicyAppendicesResponse
+	7,  // 28: steward.core.v1.PolicyAppendixService.GetPolicyAppendix:output_type -> steward.core.v1.GetPolicyAppendixResponse
+	9,  // 29: steward.core.v1.PolicyAppendixService.CreatePolicyAppendix:output_type -> steward.core.v1.CreatePolicyAppendixResponse
+	11, // 30: steward.core.v1.PolicyAppendixService.SaveAppendixDraft:output_type -> steward.core.v1.SaveAppendixDraftResponse
+	13, // 31: steward.core.v1.PolicyAppendixService.PublishAppendix:output_type -> steward.core.v1.PublishAppendixResponse
+	15, // 32: steward.core.v1.PolicyAppendixService.RetireAppendix:output_type -> steward.core.v1.RetireAppendixResponse
+	17, // 33: steward.core.v1.PolicyAppendixService.RestoreAppendix:output_type -> steward.core.v1.RestoreAppendixResponse
+	19, // 34: steward.core.v1.PolicyAppendixService.ReorderPolicyAppendices:output_type -> steward.core.v1.ReorderPolicyAppendicesResponse
+	21, // 35: steward.core.v1.PolicyAppendixService.CheckpointAppendixDraft:output_type -> steward.core.v1.CheckpointAppendixDraftResponse
+	27, // [27:36] is the sub-list for method output_type
+	18, // [18:27] is the sub-list for method input_type
 	18, // [18:18] is the sub-list for extension type_name
 	18, // [18:18] is the sub-list for extension extendee
 	0,  // [0:18] is the sub-list for field type_name
@@ -1418,7 +1559,7 @@ func file_steward_core_v1_policy_appendix_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_steward_core_v1_policy_appendix_proto_rawDesc), len(file_steward_core_v1_policy_appendix_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   19,
+			NumMessages:   21,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

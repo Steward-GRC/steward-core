@@ -165,6 +165,26 @@ message ReorderPolicyAppendicesResponse {
   repeated PolicyAppendix appendices = 1;
 }
 
+// CheckpointAppendixDraftRequest is the collab room saving the text of an
+// appendix draft on behalf of the person editing. It has no title: an open
+// draft keeps its own, and a new draft takes the published one. policy_id must
+// be the appendix's policy.
+message CheckpointAppendixDraftRequest {
+  string id = 1;
+  string policy_id = 2;
+  string content_json = 3;
+  string actor_user_id = 4;
+}
+
+// CheckpointAppendixDraftResponse says whether the text was taken. Content
+// that is not a JSON document is refused with accepted=false and a reason,
+// and nothing is stored. Content equal to the published row with no draft
+// open is accepted and makes no draft.
+message CheckpointAppendixDraftResponse {
+  bool accepted = 1;
+  string reject_reason = 2;
+}
+
 // PolicyAppendixService holds the appendices a policy or procedure owns.
 service PolicyAppendixService {
   rpc ListPolicyAppendices(ListPolicyAppendicesRequest) returns (ListPolicyAppendicesResponse);
@@ -175,4 +195,5 @@ service PolicyAppendixService {
   rpc RetireAppendix(RetireAppendixRequest) returns (RetireAppendixResponse);
   rpc RestoreAppendix(RestoreAppendixRequest) returns (RestoreAppendixResponse);
   rpc ReorderPolicyAppendices(ReorderPolicyAppendicesRequest) returns (ReorderPolicyAppendicesResponse);
+  rpc CheckpointAppendixDraft(CheckpointAppendixDraftRequest) returns (CheckpointAppendixDraftResponse);
 }
