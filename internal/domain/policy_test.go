@@ -68,3 +68,45 @@ func TestPublishDraftRequiresVersionNo(t *testing.T) {
 		t.Fatal("expected error when VersionNo is 0 (not yet assigned by store)")
 	}
 }
+
+// Issue #51: the in-review and rejected statuses and their transitions.
+func TestVersionStatusTransitionsReviewStates(t *testing.T) {
+	cases := []struct {
+		from, to domain.PolicyVersionStatus
+		ok       bool
+	}{
+		{domain.PolicyVersionStatusDraft, domain.PolicyVersionStatusInReview, true},
+		{domain.PolicyVersionStatusDraft, domain.PolicyVersionStatusRejected, true},
+		{domain.PolicyVersionStatusInReview, domain.PolicyVersionStatusRejected, true},
+		{domain.PolicyVersionStatusInReview, domain.PolicyVersionStatusDraft, true},
+		{domain.PolicyVersionStatusInReview, domain.PolicyVersionStatusPublished, true},
+		{domain.PolicyVersionStatusInReview, domain.PolicyVersionStatusArchived, true},
+		{domain.PolicyVersionStatusInReview, domain.PolicyVersionStatusInReview, true},
+		{domain.PolicyVersionStatusRejected, domain.PolicyVersionStatusArchived, true},
+		{domain.PolicyVersionStatusRejected, domain.PolicyVersionStatusPublished, false},
+		{domain.PolicyVersionStatusRejected, domain.PolicyVersionStatusDraft, false},
+		{domain.PolicyVersionStatusRejected, domain.PolicyVersionStatusInReview, false},
+		{domain.PolicyVersionStatusPublished, domain.PolicyVersionStatusInReview, false},
+	}
+	for _, c := range cases {
+		err := domain.ValidateVersionStatusTransition(c.from, c.to)
+		if (err == nil) != c.ok {
+			t.Errorf("%s -> %s: err = %v, want ok = %v", c.from, c.to, err, c.ok)
+		}
+	}
+	for _, s := range []domain.PolicyVersionStatus{domain.PolicyVersionStatusInReview, domain.PolicyVersionStatusRejected} {
+		if !domain.IsValidPolicyVersionStatus(s) {
+			t.Errorf("%s should be a valid stored status", s)
+		}
+	}
+	for _, s := range []domain.PolicyVersionStatus{domain.PolicyVersionStatusDraft, domain.PolicyVersionStatusInReview} {
+		if !s.HoldsDraftSlot() {
+			t.Errorf("%s should hold the draft slot", s)
+		}
+	}
+	for _, s := range []domain.PolicyVersionStatus{domain.PolicyVersionStatusRejected, domain.PolicyVersionStatusPublished} {
+		if s.HoldsDraftSlot() {
+			t.Errorf("%s should not hold the draft slot", s)
+		}
+	}
+}
