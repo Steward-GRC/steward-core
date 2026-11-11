@@ -6,6 +6,7 @@ syntax = "proto3";
 package steward.core.v1;
 
 import "google/protobuf/timestamp.proto";
+import "steward/core/v1/policy.proto";
 
 option go_package = "github.com/Steward-GRC/steward-core/gen/go/steward/core/v1;corev1";
 
@@ -165,6 +166,21 @@ message ReorderPolicyAppendicesResponse {
   repeated PolicyAppendix appendices = 1;
 }
 
+// DiffPolicyAppendixRequest asks for the section diff of one appendix. The
+// from side is the published row's content (empty when none is published). The
+// to side is content_json when given (text the author has not saved), else the
+// draft's content, else the published row's. Nothing is saved.
+message DiffPolicyAppendixRequest {
+  string id = 1;
+  optional string content_json = 2;
+}
+
+// DiffPolicyAppendixResponse is the diff, one entry per section key found on
+// either side, in key order. A side that did not change reads "unchanged".
+message DiffPolicyAppendixResponse {
+  repeated SectionDiff diffs = 1;
+}
+
 // CheckpointAppendixDraftRequest is the collab room saving the text of an
 // appendix draft on behalf of the person editing. It has no title: an open
 // draft keeps its own, and a new draft takes the published one. policy_id must
@@ -196,4 +212,5 @@ service PolicyAppendixService {
   rpc RestoreAppendix(RestoreAppendixRequest) returns (RestoreAppendixResponse);
   rpc ReorderPolicyAppendices(ReorderPolicyAppendicesRequest) returns (ReorderPolicyAppendicesResponse);
   rpc CheckpointAppendixDraft(CheckpointAppendixDraftRequest) returns (CheckpointAppendixDraftResponse);
+  rpc DiffPolicyAppendix(DiffPolicyAppendixRequest) returns (DiffPolicyAppendixResponse);
 }
