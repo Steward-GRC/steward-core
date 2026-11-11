@@ -238,6 +238,102 @@ func (s *PolicyStore) SetHomeCategory(ctx context.Context, policyID, targetCateg
 	return s.GetPolicy(ctx, policyID)
 }
 
+// ErrPolicyRetired is wrapped by MovePolicies when a document in the batch is retired, which
+// refuses the whole batch.
+var ErrPolicyRetired = errors.New("policy is retired")
+
+// PreviewMoveNumbers returns the number each document of the given types would get if all were
+// moved into target, in order: the n-th document of a type gets the n-th number after the target's
+// counter for that type. It changes nothing.
+func (s *PolicyStore) PreviewMoveNumbers(ctx context.Context, target uuid.UUID, types []domain.DocumentType) ([]string, error) {
+	var (
+		code *string
+		slug string
+	)
+	if err := s.db.Querier().QueryRow(ctx,
+		`SELECT code, slug FROM categories WHERE id = $1`, target,
+	).Scan(&code, &slug); err != nil {
+		return nil, fmt.Errorf("PolicyStore.PreviewMoveNumbers category: %w", err)
+	}
+	segment := numberCodeSegment(code, slug)
+	last := map[domain.DocumentType]int{}
+	taken := map[domain.DocumentType]int{}
+	out := make([]string, 0, len(types))
+	for _, dt := range types {
+		if _, ok := last[dt]; !ok {
+			var n int
+			err := s.db.Querier().QueryRow(ctx,
+				`SELECT COALESCE((SELECT last_seq FROM category_policy_seq WHERE category_id = $1 AND document_type = $2), 0)`,
+				target, string(dt),
+			).Scan(&n)
+			if err != nil {
+				return nil, fmt.Errorf("PolicyStore.PreviewMoveNumbers seq: %w", err)
+			}
+			last[dt] = n
+		}
+		taken[dt]++
+		out = append(out, renderDocNumber(dt, segment, last[dt]+taken[dt]))
+	}
+	return out, nil
+}
+
+// MovePolicies moves the documents into target in one transaction, in the order given, each taking
+// the next number of its type from the target's counter. Either every document moves or none does:
+// a retired or missing document fails the batch and rolls the counters back. A document already in
+// target keeps its number. The documents come back as they stand after the move, in the same order.
+func (s *PolicyStore) MovePolicies(ctx context.Context, target uuid.UUID, ids []uuid.UUID) ([]domain.Policy, error) {
+	err := s.db.RunInTx(ctx, func(tx pgx.Tx) error {
+		for _, id := range ids {
+			var (
+				docType string
+				home    uuid.UUID
+				retired *time.Time
+			)
+			// The row lock keeps a concurrent retire or move from slipping between the check and
+			// the update.
+			if err := tx.QueryRow(ctx,
+				`SELECT document_type, home_category_id, retired_at FROM policies WHERE id = $1 FOR UPDATE`, id,
+			).Scan(&docType, &home, &retired); err != nil {
+				return fmt.Errorf("PolicyStore.MovePolicies %s: %w", id, err)
+			}
+			if retired != nil {
+				return fmt.Errorf("PolicyStore.MovePolicies %s: %w", id, ErrPolicyRetired)
+			}
+			if home == target {
+				continue
+			}
+			var seq int
+			if err := tx.QueryRow(ctx,
+				`INSERT INTO category_policy_seq (category_id, document_type, last_seq) VALUES ($1, $2, 1)
+				 ON CONFLICT (category_id, document_type) DO UPDATE
+				   SET last_seq = category_policy_seq.last_seq + 1
+				 RETURNING last_seq`,
+				target, docType,
+			).Scan(&seq); err != nil {
+				return fmt.Errorf("PolicyStore.MovePolicies seq: %w", err)
+			}
+			if _, err := tx.Exec(ctx,
+				`UPDATE policies SET home_category_id = $2, sequence = $3, updated_at = now() WHERE id = $1`,
+				id, target, seq); err != nil {
+				return fmt.Errorf("PolicyStore.MovePolicies update: %w", err)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]domain.Policy, 0, len(ids))
+	for _, id := range ids {
+		p, err := s.GetPolicy(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, nil
+}
+
 // GetPolicy fetches a policy by id. NULL ids come back as uuid.Nil and a NULL
 // ack_triggers as nil (inherit from the category).
 func (s *PolicyStore) GetPolicy(ctx context.Context, id uuid.UUID) (domain.Policy, error) {

@@ -24,6 +24,7 @@ const (
 	CodeStoreUnavailable     = 4001
 	CodeCategoryNotDeletable = 4002
 	CodeInvalidCategoryRule  = 4003
+	CodeMoveRefused          = 4004
 )
 
 // Entries returns the registry entries.
@@ -39,6 +40,9 @@ func Entries() []apperr.Entry {
 		{Code: CodeInvalidCategoryRule, Symbol: "INVALID_CATEGORY_RULE", Category: apperr.CategoryInvalid,
 			Title: "category rules", Cause: "a category ruleset failed the steward-authz validation",
 			UserSafe: true, Message: "Access rule {rule} in {category} is not valid ({problem})."},
+		{Code: CodeMoveRefused, Symbol: "MOVE_REFUSED", Category: apperr.CategoryFailedPrecondition,
+			Title: "move documents", Cause: "a bulk move was refused whole because a document cannot move: it is retired or the target category does not hold its type; the reason metadata names which",
+			UserSafe: true, Message: "Can't move {document}: {refusal}"},
 	}
 }
 
@@ -87,6 +91,14 @@ func CategoryNotDeletable(name string, cause error) error {
 		cause = errCategoryHasDocuments
 	}
 	return apperr.WithMeta(apperr.Coded(CodeCategoryNotDeletable, cause), apperr.Meta("category", name))
+}
+
+// MoveRefused codes a bulk move refused whole. document is the number of the document that
+// cannot move, reason the refusal code (RETIRED, CATEGORY_REFUSES_TYPE) and refusal the sentence
+// to show.
+func MoveRefused(document, reason, refusal string) error {
+	return apperr.WithMeta(apperr.Coded(CodeMoveRefused, errors.New("core: document cannot be moved")),
+		apperr.Meta("document", document), apperr.Meta("reason", reason), apperr.Meta("refusal", refusal))
 }
 
 // InvalidCategoryRule codes a ruleset steward-authz refused. The category,

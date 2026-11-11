@@ -63,6 +63,8 @@ type fakePolicyStore struct {
 	policies      map[uuid.UUID]domain.Policy
 	versions      map[uuid.UUID]domain.PolicyVersion
 	draftByPolicy map[uuid.UUID]domain.PolicyVersion
+	// moveSeq is the bulk-move fake's per-category counters (policy_move_handler_test.go).
+	moveSeq map[string]*int
 	// templateUpdateAvailable is the canned answer for
 	// IsTemplateUpdateAvailable; templateUpdateErr forces an error path.
 	templateUpdateAvailable bool

@@ -53,6 +53,8 @@ type PolicyStorer interface {
 	SetTitle(ctx context.Context, policyID uuid.UUID, title string) (domain.Policy, error)
 	SetProposedTitle(ctx context.Context, policyVersionID uuid.UUID, proposedTitle *string) error
 	SetHomeCategory(ctx context.Context, policyID, targetCategoryID uuid.UUID) (domain.Policy, error)
+	PreviewMoveNumbers(ctx context.Context, target uuid.UUID, types []domain.DocumentType) ([]string, error)
+	MovePolicies(ctx context.Context, target uuid.UUID, ids []uuid.UUID) ([]domain.Policy, error)
 	IsTemplateUpdateAvailable(ctx context.Context, policyVersionID, templateID uuid.UUID) (bool, error)
 	SetAck(ctx context.Context, policyID uuid.UUID, ack *domain.AckTrigger, override []uuid.UUID) (domain.Policy, error)
 	SetTemplate(ctx context.Context, policyID, templateID uuid.UUID, templateNone bool) (domain.Policy, error)
@@ -81,6 +83,9 @@ type PolicyHandler struct {
 	appendixCopier appendixCopier
 	// versionCache holds published versions only. nil turns caching off.
 	versionCache versionCache
+	// moveTypeGate says whether a category holds a document type, for the bulk move. nil means every
+	// category holds both.
+	moveTypeGate func(domain.Category, domain.DocumentType) bool
 }
 
 // versionCache is the optional byte cache for published, immutable data.
