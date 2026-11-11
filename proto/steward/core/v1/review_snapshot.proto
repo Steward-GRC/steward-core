@@ -1,0 +1,49 @@
+// Copyright 2026 The Steward Authors
+// SPDX-License-Identifier: Apache-2.0
+
+syntax = "proto3";
+
+package steward.core.v1;
+
+import "steward/core/v1/policy.proto";
+
+option go_package = "github.com/Steward-GRC/steward-core/gen/go/steward/core/v1;corev1";
+
+// ReviewSnapshotService keeps, for each approver, a copy of the version text
+// they last reviewed, so the approver is shown what the author changed in
+// review since then. The version stays in review while the author edits it in
+// place, so the copy is the only record of the earlier text.
+//
+// Core takes the approver's user id as given. Whether the caller is an
+// approver (the author and a person with no seat get no such view) is the
+// gateway's check, and the gateway calls MarkVersionReviewed after each act.
+service ReviewSnapshotService {
+  // GetChangesSinceReview diffs the approver's snapshot against the current
+  // text, per section. The first read for an approver takes the snapshot at the
+  // current text, so it reports every section as unchanged.
+  rpc GetChangesSinceReview(GetChangesSinceReviewRequest) returns (GetChangesSinceReviewResponse);
+  // MarkVersionReviewed moves the approver's snapshot to the current text. It
+  // moves that approver's snapshot only.
+  rpc MarkVersionReviewed(MarkVersionReviewedRequest) returns (MarkVersionReviewedResponse);
+}
+
+message GetChangesSinceReviewRequest {
+  string policy_version_id = 1;
+  // The approver whose snapshot is read.
+  string user_id = 2;
+}
+
+message GetChangesSinceReviewResponse {
+  // One entry per section, unchanged ones included. The sections come from the
+  // version's pinned template, or from the section keys present in either text
+  // when the version has no template.
+  repeated SectionDiff diffs = 1;
+}
+
+message MarkVersionReviewedRequest {
+  string policy_version_id = 1;
+  // The approver who reviewed the version.
+  string user_id = 2;
+}
+
+message MarkVersionReviewedResponse {}

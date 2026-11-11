@@ -221,6 +221,7 @@ func run(ctx context.Context, logger log.Logger) error {
 		// reach a browser.
 		corev1.RegisterEmailServiceSecretServiceServer(s, grpcsvc.NewEmailServiceSecretHandler(emailService))
 		corev1.RegisterAssetServiceServer(s, assetH)
+		corev1.RegisterReviewSnapshotServiceServer(s, grpcsvc.NewReviewSnapshotHandler(store.NewReviewSnapshotStore(db), templates, auditor))
 	})
 	cancel()
 	return errors.Join(err, <-probesDone)
