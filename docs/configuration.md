@@ -29,7 +29,7 @@ value that doesn't parse stops the service with every problem listed; nothing fa
 | `S3_FORCE_PATH_STYLE` | `true` | Path-style bucket addressing, which most self-hosted stores need. |
 | `REVIEW_BODY_MAX_CHARS` | `10000` | The longest review comment, in characters. A longer one is refused. |
 | `REVIEW_QUOTE_MAX_CHARS` | `4000` | The longest text a review thread may quote, in characters. |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | `localhost:4317` | The OTLP collector for traces and metrics. |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | empty | The OTLP collector for traces and metrics. Unset or empty turns tracing off. |
 | `LOG_LEVEL`, `LOG_FORMAT` | go-log's defaults | `trace` to `error`; `console` locally, `json` in every cluster. |
 
 ## The settings key
