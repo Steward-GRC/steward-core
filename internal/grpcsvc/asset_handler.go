@@ -36,11 +36,19 @@ type assetSettingsBackend interface {
 	Set(ctx context.Context, kinds []domain.AssetKind, actor string) (domain.AssetSettings, error)
 }
 
+// assetLinksBackend is the part of *store.AssetStore the admin list and delete
+// use: files with the documents that link to them.
+type assetLinksBackend interface {
+	ListWithLinks(ctx context.Context, unlinkedOnly bool) ([]domain.LinkedAsset, error)
+	DeleteWithLinks(ctx context.Context, id uuid.UUID) (domain.LinkedAsset, error)
+}
+
 // objectStore is the part of go-objectstore's Store the handler uses. A nil
 // store means object storage isn't configured: calls fail Unavailable.
 type objectStore interface {
 	Put(ctx context.Context, key string, body io.Reader, opts objectstore.PutOptions) (objectstore.Info, error)
 	Get(ctx context.Context, key string, opts objectstore.GetOptions) (*objectstore.Object, error)
+	Delete(ctx context.Context, key string) error
 }
 
 // AssetHandler implements corev1.AssetServiceServer. Access is enforced at
@@ -54,6 +62,8 @@ type AssetHandler struct {
 	// settings is the admin setting of allowed kinds. Nil means every kind is
 	// allowed and the settings RPCs answer FailedPrecondition.
 	settings assetSettingsBackend
+	// links serves ListAssets and DeleteAsset; nil answers FailedPrecondition.
+	links assetLinksBackend
 }
 
 // NewAssetHandler returns a handler. objects may be nil when object storage
@@ -65,6 +75,12 @@ func NewAssetHandler(s assetBackend, objects objectStore, auditor auditEmitter) 
 // WithSettings sets the store of the allowed-kinds setting.
 func (h *AssetHandler) WithSettings(b assetSettingsBackend) *AssetHandler {
 	h.settings = b
+	return h
+}
+
+// WithLinks sets the backend of the admin list and delete.
+func (h *AssetHandler) WithLinks(b assetLinksBackend) *AssetHandler {
+	h.links = b
 	return h
 }
 

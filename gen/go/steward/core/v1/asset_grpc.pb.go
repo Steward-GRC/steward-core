@@ -26,6 +26,8 @@ const (
 	AssetService_GetAsset_FullMethodName         = "/steward.core.v1.AssetService/GetAsset"
 	AssetService_GetAssetSettings_FullMethodName = "/steward.core.v1.AssetService/GetAssetSettings"
 	AssetService_SetAssetSettings_FullMethodName = "/steward.core.v1.AssetService/SetAssetSettings"
+	AssetService_ListAssets_FullMethodName       = "/steward.core.v1.AssetService/ListAssets"
+	AssetService_DeleteAsset_FullMethodName      = "/steward.core.v1.AssetService/DeleteAsset"
 )
 
 // AssetServiceClient is the client API for AssetService service.
@@ -38,6 +40,8 @@ type AssetServiceClient interface {
 	GetAsset(ctx context.Context, in *GetAssetRequest, opts ...grpc.CallOption) (*GetAssetResponse, error)
 	GetAssetSettings(ctx context.Context, in *GetAssetSettingsRequest, opts ...grpc.CallOption) (*GetAssetSettingsResponse, error)
 	SetAssetSettings(ctx context.Context, in *SetAssetSettingsRequest, opts ...grpc.CallOption) (*SetAssetSettingsResponse, error)
+	ListAssets(ctx context.Context, in *ListAssetsRequest, opts ...grpc.CallOption) (*ListAssetsResponse, error)
+	DeleteAsset(ctx context.Context, in *DeleteAssetRequest, opts ...grpc.CallOption) (*DeleteAssetResponse, error)
 }
 
 type assetServiceClient struct {
@@ -88,6 +92,26 @@ func (c *assetServiceClient) SetAssetSettings(ctx context.Context, in *SetAssetS
 	return out, nil
 }
 
+func (c *assetServiceClient) ListAssets(ctx context.Context, in *ListAssetsRequest, opts ...grpc.CallOption) (*ListAssetsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListAssetsResponse)
+	err := c.cc.Invoke(ctx, AssetService_ListAssets_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *assetServiceClient) DeleteAsset(ctx context.Context, in *DeleteAssetRequest, opts ...grpc.CallOption) (*DeleteAssetResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeleteAssetResponse)
+	err := c.cc.Invoke(ctx, AssetService_DeleteAsset_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // AssetServiceServer is the server API for AssetService service.
 // All implementations must embed UnimplementedAssetServiceServer
 // for forward compatibility.
@@ -98,6 +122,8 @@ type AssetServiceServer interface {
 	GetAsset(context.Context, *GetAssetRequest) (*GetAssetResponse, error)
 	GetAssetSettings(context.Context, *GetAssetSettingsRequest) (*GetAssetSettingsResponse, error)
 	SetAssetSettings(context.Context, *SetAssetSettingsRequest) (*SetAssetSettingsResponse, error)
+	ListAssets(context.Context, *ListAssetsRequest) (*ListAssetsResponse, error)
+	DeleteAsset(context.Context, *DeleteAssetRequest) (*DeleteAssetResponse, error)
 	mustEmbedUnimplementedAssetServiceServer()
 }
 
@@ -119,6 +145,12 @@ func (UnimplementedAssetServiceServer) GetAssetSettings(context.Context, *GetAss
 }
 func (UnimplementedAssetServiceServer) SetAssetSettings(context.Context, *SetAssetSettingsRequest) (*SetAssetSettingsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method SetAssetSettings not implemented")
+}
+func (UnimplementedAssetServiceServer) ListAssets(context.Context, *ListAssetsRequest) (*ListAssetsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListAssets not implemented")
+}
+func (UnimplementedAssetServiceServer) DeleteAsset(context.Context, *DeleteAssetRequest) (*DeleteAssetResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeleteAsset not implemented")
 }
 func (UnimplementedAssetServiceServer) mustEmbedUnimplementedAssetServiceServer() {}
 func (UnimplementedAssetServiceServer) testEmbeddedByValue()                      {}
@@ -213,6 +245,42 @@ func _AssetService_SetAssetSettings_Handler(srv interface{}, ctx context.Context
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AssetService_ListAssets_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListAssetsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AssetServiceServer).ListAssets(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AssetService_ListAssets_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AssetServiceServer).ListAssets(ctx, req.(*ListAssetsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AssetService_DeleteAsset_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteAssetRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AssetServiceServer).DeleteAsset(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AssetService_DeleteAsset_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AssetServiceServer).DeleteAsset(ctx, req.(*DeleteAssetRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // AssetService_ServiceDesc is the grpc.ServiceDesc for AssetService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -235,6 +303,14 @@ var AssetService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SetAssetSettings",
 			Handler:    _AssetService_SetAssetSettings_Handler,
+		},
+		{
+			MethodName: "ListAssets",
+			Handler:    _AssetService_ListAssets_Handler,
+		},
+		{
+			MethodName: "DeleteAsset",
+			Handler:    _AssetService_DeleteAsset_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
