@@ -77,6 +77,71 @@ func (ReviewSide) EnumDescriptor() ([]byte, []int) {
 	return file_steward_core_v1_review_proto_rawDescGZIP(), []int{0}
 }
 
+// SuggestionOutcome is how a suggestion ended. A suggestion ends in exactly
+// one outcome; reopening its thread does not change it.
+type SuggestionOutcome int32
+
+const (
+	SuggestionOutcome_SUGGESTION_OUTCOME_UNSPECIFIED SuggestionOutcome = 0
+	// The author changed the text as suggested (author, on their turn).
+	SuggestionOutcome_SUGGESTION_OUTCOME_CHANGED SuggestionOutcome = 1
+	// The reviewer agreed with the author's last text (reviewer, on their turn).
+	SuggestionOutcome_SUGGESTION_OUTCOME_AGREED SuggestionOutcome = 2
+	// The author removed the note (author, on their turn).
+	SuggestionOutcome_SUGGESTION_OUTCOME_REMOVED SuggestionOutcome = 3
+	// The side that proposed first took it back (while it is not their turn).
+	SuggestionOutcome_SUGGESTION_OUTCOME_WITHDRAWN SuggestionOutcome = 4
+	// The side on turn declined; a reason is required.
+	SuggestionOutcome_SUGGESTION_OUTCOME_NOT_AGREED SuggestionOutcome = 5
+)
+
+// Enum value maps for SuggestionOutcome.
+var (
+	SuggestionOutcome_name = map[int32]string{
+		0: "SUGGESTION_OUTCOME_UNSPECIFIED",
+		1: "SUGGESTION_OUTCOME_CHANGED",
+		2: "SUGGESTION_OUTCOME_AGREED",
+		3: "SUGGESTION_OUTCOME_REMOVED",
+		4: "SUGGESTION_OUTCOME_WITHDRAWN",
+		5: "SUGGESTION_OUTCOME_NOT_AGREED",
+	}
+	SuggestionOutcome_value = map[string]int32{
+		"SUGGESTION_OUTCOME_UNSPECIFIED": 0,
+		"SUGGESTION_OUTCOME_CHANGED":     1,
+		"SUGGESTION_OUTCOME_AGREED":      2,
+		"SUGGESTION_OUTCOME_REMOVED":     3,
+		"SUGGESTION_OUTCOME_WITHDRAWN":   4,
+		"SUGGESTION_OUTCOME_NOT_AGREED":  5,
+	}
+)
+
+func (x SuggestionOutcome) Enum() *SuggestionOutcome {
+	p := new(SuggestionOutcome)
+	*p = x
+	return p
+}
+
+func (x SuggestionOutcome) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (SuggestionOutcome) Descriptor() protoreflect.EnumDescriptor {
+	return file_steward_core_v1_review_proto_enumTypes[1].Descriptor()
+}
+
+func (SuggestionOutcome) Type() protoreflect.EnumType {
+	return &file_steward_core_v1_review_proto_enumTypes[1]
+}
+
+func (x SuggestionOutcome) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use SuggestionOutcome.Descriptor instead.
+func (SuggestionOutcome) EnumDescriptor() ([]byte, []int) {
+	return file_steward_core_v1_review_proto_rawDescGZIP(), []int{1}
+}
+
 type ReviewMessage struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -161,7 +226,9 @@ type ReviewThread struct {
 	ApproverUserId string                 `protobuf:"bytes,7,opt,name=approver_user_id,json=approverUserId,proto3" json:"approver_user_id,omitempty"`
 	CreatedBy      string                 `protobuf:"bytes,8,opt,name=created_by,json=createdBy,proto3" json:"created_by,omitempty"`
 	// Oldest first; the first is the one that started the thread.
-	Messages      []*ReviewMessage `protobuf:"bytes,9,rep,name=messages,proto3" json:"messages,omitempty"`
+	Messages []*ReviewMessage `protobuf:"bytes,9,rep,name=messages,proto3" json:"messages,omitempty"`
+	// Set when the thread carries a suggested change; unset for a plain comment.
+	Suggestion    *ReviewSuggestion `protobuf:"bytes,10,opt,name=suggestion,proto3" json:"suggestion,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -259,6 +326,200 @@ func (x *ReviewThread) GetMessages() []*ReviewMessage {
 	return nil
 }
 
+func (x *ReviewThread) GetSuggestion() *ReviewSuggestion {
+	if x != nil {
+		return x.Suggestion
+	}
+	return nil
+}
+
+// SuggestionRound is one proposal or counter. Round 1 is the proposal.
+type SuggestionRound struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Seq           int32                  `protobuf:"varint,1,opt,name=seq,proto3" json:"seq,omitempty"`
+	Side          ReviewSide             `protobuf:"varint,2,opt,name=side,proto3,enum=steward.core.v1.ReviewSide" json:"side,omitempty"`
+	UserId        string                 `protobuf:"bytes,3,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	Text          string                 `protobuf:"bytes,4,opt,name=text,proto3" json:"text,omitempty"`
+	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SuggestionRound) Reset() {
+	*x = SuggestionRound{}
+	mi := &file_steward_core_v1_review_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SuggestionRound) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SuggestionRound) ProtoMessage() {}
+
+func (x *SuggestionRound) ProtoReflect() protoreflect.Message {
+	mi := &file_steward_core_v1_review_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SuggestionRound.ProtoReflect.Descriptor instead.
+func (*SuggestionRound) Descriptor() ([]byte, []int) {
+	return file_steward_core_v1_review_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *SuggestionRound) GetSeq() int32 {
+	if x != nil {
+		return x.Seq
+	}
+	return 0
+}
+
+func (x *SuggestionRound) GetSide() ReviewSide {
+	if x != nil {
+		return x.Side
+	}
+	return ReviewSide_REVIEW_SIDE_UNSPECIFIED
+}
+
+func (x *SuggestionRound) GetUserId() string {
+	if x != nil {
+		return x.UserId
+	}
+	return ""
+}
+
+func (x *SuggestionRound) GetText() string {
+	if x != nil {
+		return x.Text
+	}
+	return ""
+}
+
+func (x *SuggestionRound) GetCreatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return nil
+}
+
+// ReviewSuggestion is a proposed replacement for the quoted text, answered by
+// counters in turn. Core keeps the rounds and the outcome only; the client
+// applies accepted text to the document and saves it.
+type ReviewSuggestion struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The latest round's text (the current proposal).
+	Text string `protobuf:"bytes,1,opt,name=text,proto3" json:"text,omitempty"`
+	// The side whose turn it is: the other side of the latest round. Still the
+	// other side of the latest round after the suggestion ends.
+	Turn ReviewSide `protobuf:"varint,2,opt,name=turn,proto3,enum=steward.core.v1.ReviewSide" json:"turn,omitempty"`
+	// Oldest first.
+	Rounds []*SuggestionRound `protobuf:"bytes,3,rep,name=rounds,proto3" json:"rounds,omitempty"`
+	// UNSPECIFIED while the suggestion is open.
+	Outcome SuggestionOutcome `protobuf:"varint,4,opt,name=outcome,proto3,enum=steward.core.v1.SuggestionOutcome" json:"outcome,omitempty"`
+	Reason  string            `protobuf:"bytes,5,opt,name=reason,proto3" json:"reason,omitempty"`
+	// Empty while open.
+	ClosedBy string `protobuf:"bytes,6,opt,name=closed_by,json=closedBy,proto3" json:"closed_by,omitempty"`
+	// The text at close, on every outcome.
+	ClosedText    string                 `protobuf:"bytes,7,opt,name=closed_text,json=closedText,proto3" json:"closed_text,omitempty"`
+	ClosedAt      *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=closed_at,json=closedAt,proto3" json:"closed_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReviewSuggestion) Reset() {
+	*x = ReviewSuggestion{}
+	mi := &file_steward_core_v1_review_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReviewSuggestion) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReviewSuggestion) ProtoMessage() {}
+
+func (x *ReviewSuggestion) ProtoReflect() protoreflect.Message {
+	mi := &file_steward_core_v1_review_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReviewSuggestion.ProtoReflect.Descriptor instead.
+func (*ReviewSuggestion) Descriptor() ([]byte, []int) {
+	return file_steward_core_v1_review_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *ReviewSuggestion) GetText() string {
+	if x != nil {
+		return x.Text
+	}
+	return ""
+}
+
+func (x *ReviewSuggestion) GetTurn() ReviewSide {
+	if x != nil {
+		return x.Turn
+	}
+	return ReviewSide_REVIEW_SIDE_UNSPECIFIED
+}
+
+func (x *ReviewSuggestion) GetRounds() []*SuggestionRound {
+	if x != nil {
+		return x.Rounds
+	}
+	return nil
+}
+
+func (x *ReviewSuggestion) GetOutcome() SuggestionOutcome {
+	if x != nil {
+		return x.Outcome
+	}
+	return SuggestionOutcome_SUGGESTION_OUTCOME_UNSPECIFIED
+}
+
+func (x *ReviewSuggestion) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+func (x *ReviewSuggestion) GetClosedBy() string {
+	if x != nil {
+		return x.ClosedBy
+	}
+	return ""
+}
+
+func (x *ReviewSuggestion) GetClosedText() string {
+	if x != nil {
+		return x.ClosedText
+	}
+	return ""
+}
+
+func (x *ReviewSuggestion) GetClosedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.ClosedAt
+	}
+	return nil
+}
+
 // AddReviewThreadRequest starts a thread with its first message. For the
 // REVIEWER side approver_user_id must be the actor; for the AUTHOR side the
 // gateway has checked it names an approver who holds a seat.
@@ -271,13 +532,17 @@ type AddReviewThreadRequest struct {
 	Occurrence      int32                  `protobuf:"varint,5,opt,name=occurrence,proto3" json:"occurrence,omitempty"`
 	Body            string                 `protobuf:"bytes,6,opt,name=body,proto3" json:"body,omitempty"`
 	ApproverUserId  string                 `protobuf:"bytes,7,opt,name=approver_user_id,json=approverUserId,proto3" json:"approver_user_id,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// Replacement text for the quote. Empty, or equal to the quote after
+	// trimming, makes a plain comment. Otherwise the thread carries a
+	// suggestion that starts on the other side's turn. At most the quote limit.
+	SuggestedText string `protobuf:"bytes,8,opt,name=suggested_text,json=suggestedText,proto3" json:"suggested_text,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *AddReviewThreadRequest) Reset() {
 	*x = AddReviewThreadRequest{}
-	mi := &file_steward_core_v1_review_proto_msgTypes[2]
+	mi := &file_steward_core_v1_review_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -289,7 +554,7 @@ func (x *AddReviewThreadRequest) String() string {
 func (*AddReviewThreadRequest) ProtoMessage() {}
 
 func (x *AddReviewThreadRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_steward_core_v1_review_proto_msgTypes[2]
+	mi := &file_steward_core_v1_review_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -302,7 +567,7 @@ func (x *AddReviewThreadRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AddReviewThreadRequest.ProtoReflect.Descriptor instead.
 func (*AddReviewThreadRequest) Descriptor() ([]byte, []int) {
-	return file_steward_core_v1_review_proto_rawDescGZIP(), []int{2}
+	return file_steward_core_v1_review_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *AddReviewThreadRequest) GetActorUserId() string {
@@ -354,6 +619,13 @@ func (x *AddReviewThreadRequest) GetApproverUserId() string {
 	return ""
 }
 
+func (x *AddReviewThreadRequest) GetSuggestedText() string {
+	if x != nil {
+		return x.SuggestedText
+	}
+	return ""
+}
+
 type AddReviewThreadResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Thread        *ReviewThread          `protobuf:"bytes,1,opt,name=thread,proto3" json:"thread,omitempty"`
@@ -363,7 +635,7 @@ type AddReviewThreadResponse struct {
 
 func (x *AddReviewThreadResponse) Reset() {
 	*x = AddReviewThreadResponse{}
-	mi := &file_steward_core_v1_review_proto_msgTypes[3]
+	mi := &file_steward_core_v1_review_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -375,7 +647,7 @@ func (x *AddReviewThreadResponse) String() string {
 func (*AddReviewThreadResponse) ProtoMessage() {}
 
 func (x *AddReviewThreadResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_steward_core_v1_review_proto_msgTypes[3]
+	mi := &file_steward_core_v1_review_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -388,7 +660,7 @@ func (x *AddReviewThreadResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AddReviewThreadResponse.ProtoReflect.Descriptor instead.
 func (*AddReviewThreadResponse) Descriptor() ([]byte, []int) {
-	return file_steward_core_v1_review_proto_rawDescGZIP(), []int{3}
+	return file_steward_core_v1_review_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *AddReviewThreadResponse) GetThread() *ReviewThread {
@@ -411,7 +683,7 @@ type ListReviewThreadsRequest struct {
 
 func (x *ListReviewThreadsRequest) Reset() {
 	*x = ListReviewThreadsRequest{}
-	mi := &file_steward_core_v1_review_proto_msgTypes[4]
+	mi := &file_steward_core_v1_review_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -423,7 +695,7 @@ func (x *ListReviewThreadsRequest) String() string {
 func (*ListReviewThreadsRequest) ProtoMessage() {}
 
 func (x *ListReviewThreadsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_steward_core_v1_review_proto_msgTypes[4]
+	mi := &file_steward_core_v1_review_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -436,7 +708,7 @@ func (x *ListReviewThreadsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListReviewThreadsRequest.ProtoReflect.Descriptor instead.
 func (*ListReviewThreadsRequest) Descriptor() ([]byte, []int) {
-	return file_steward_core_v1_review_proto_rawDescGZIP(), []int{4}
+	return file_steward_core_v1_review_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *ListReviewThreadsRequest) GetPolicyVersionId() string {
@@ -462,7 +734,7 @@ type ListReviewThreadsResponse struct {
 
 func (x *ListReviewThreadsResponse) Reset() {
 	*x = ListReviewThreadsResponse{}
-	mi := &file_steward_core_v1_review_proto_msgTypes[5]
+	mi := &file_steward_core_v1_review_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -474,7 +746,7 @@ func (x *ListReviewThreadsResponse) String() string {
 func (*ListReviewThreadsResponse) ProtoMessage() {}
 
 func (x *ListReviewThreadsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_steward_core_v1_review_proto_msgTypes[5]
+	mi := &file_steward_core_v1_review_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -487,7 +759,7 @@ func (x *ListReviewThreadsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListReviewThreadsResponse.ProtoReflect.Descriptor instead.
 func (*ListReviewThreadsResponse) Descriptor() ([]byte, []int) {
-	return file_steward_core_v1_review_proto_rawDescGZIP(), []int{5}
+	return file_steward_core_v1_review_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *ListReviewThreadsResponse) GetThreads() []*ReviewThread {
@@ -511,7 +783,7 @@ type ReplyReviewThreadRequest struct {
 
 func (x *ReplyReviewThreadRequest) Reset() {
 	*x = ReplyReviewThreadRequest{}
-	mi := &file_steward_core_v1_review_proto_msgTypes[6]
+	mi := &file_steward_core_v1_review_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -523,7 +795,7 @@ func (x *ReplyReviewThreadRequest) String() string {
 func (*ReplyReviewThreadRequest) ProtoMessage() {}
 
 func (x *ReplyReviewThreadRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_steward_core_v1_review_proto_msgTypes[6]
+	mi := &file_steward_core_v1_review_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -536,7 +808,7 @@ func (x *ReplyReviewThreadRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReplyReviewThreadRequest.ProtoReflect.Descriptor instead.
 func (*ReplyReviewThreadRequest) Descriptor() ([]byte, []int) {
-	return file_steward_core_v1_review_proto_rawDescGZIP(), []int{6}
+	return file_steward_core_v1_review_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *ReplyReviewThreadRequest) GetActorUserId() string {
@@ -576,7 +848,7 @@ type ReplyReviewThreadResponse struct {
 
 func (x *ReplyReviewThreadResponse) Reset() {
 	*x = ReplyReviewThreadResponse{}
-	mi := &file_steward_core_v1_review_proto_msgTypes[7]
+	mi := &file_steward_core_v1_review_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -588,7 +860,7 @@ func (x *ReplyReviewThreadResponse) String() string {
 func (*ReplyReviewThreadResponse) ProtoMessage() {}
 
 func (x *ReplyReviewThreadResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_steward_core_v1_review_proto_msgTypes[7]
+	mi := &file_steward_core_v1_review_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -601,7 +873,7 @@ func (x *ReplyReviewThreadResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReplyReviewThreadResponse.ProtoReflect.Descriptor instead.
 func (*ReplyReviewThreadResponse) Descriptor() ([]byte, []int) {
-	return file_steward_core_v1_review_proto_rawDescGZIP(), []int{7}
+	return file_steward_core_v1_review_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *ReplyReviewThreadResponse) GetThread() *ReviewThread {
@@ -625,7 +897,7 @@ type SetReviewThreadResolvedRequest struct {
 
 func (x *SetReviewThreadResolvedRequest) Reset() {
 	*x = SetReviewThreadResolvedRequest{}
-	mi := &file_steward_core_v1_review_proto_msgTypes[8]
+	mi := &file_steward_core_v1_review_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -637,7 +909,7 @@ func (x *SetReviewThreadResolvedRequest) String() string {
 func (*SetReviewThreadResolvedRequest) ProtoMessage() {}
 
 func (x *SetReviewThreadResolvedRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_steward_core_v1_review_proto_msgTypes[8]
+	mi := &file_steward_core_v1_review_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -650,7 +922,7 @@ func (x *SetReviewThreadResolvedRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetReviewThreadResolvedRequest.ProtoReflect.Descriptor instead.
 func (*SetReviewThreadResolvedRequest) Descriptor() ([]byte, []int) {
-	return file_steward_core_v1_review_proto_rawDescGZIP(), []int{8}
+	return file_steward_core_v1_review_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *SetReviewThreadResolvedRequest) GetActorUserId() string {
@@ -690,7 +962,7 @@ type SetReviewThreadResolvedResponse struct {
 
 func (x *SetReviewThreadResolvedResponse) Reset() {
 	*x = SetReviewThreadResolvedResponse{}
-	mi := &file_steward_core_v1_review_proto_msgTypes[9]
+	mi := &file_steward_core_v1_review_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -702,7 +974,7 @@ func (x *SetReviewThreadResolvedResponse) String() string {
 func (*SetReviewThreadResolvedResponse) ProtoMessage() {}
 
 func (x *SetReviewThreadResolvedResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_steward_core_v1_review_proto_msgTypes[9]
+	mi := &file_steward_core_v1_review_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -715,7 +987,7 @@ func (x *SetReviewThreadResolvedResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetReviewThreadResolvedResponse.ProtoReflect.Descriptor instead.
 func (*SetReviewThreadResolvedResponse) Descriptor() ([]byte, []int) {
-	return file_steward_core_v1_review_proto_rawDescGZIP(), []int{9}
+	return file_steward_core_v1_review_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *SetReviewThreadResolvedResponse) GetThread() *ReviewThread {
@@ -739,7 +1011,7 @@ type DeleteReviewThreadRequest struct {
 
 func (x *DeleteReviewThreadRequest) Reset() {
 	*x = DeleteReviewThreadRequest{}
-	mi := &file_steward_core_v1_review_proto_msgTypes[10]
+	mi := &file_steward_core_v1_review_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -751,7 +1023,7 @@ func (x *DeleteReviewThreadRequest) String() string {
 func (*DeleteReviewThreadRequest) ProtoMessage() {}
 
 func (x *DeleteReviewThreadRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_steward_core_v1_review_proto_msgTypes[10]
+	mi := &file_steward_core_v1_review_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -764,7 +1036,7 @@ func (x *DeleteReviewThreadRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteReviewThreadRequest.ProtoReflect.Descriptor instead.
 func (*DeleteReviewThreadRequest) Descriptor() ([]byte, []int) {
-	return file_steward_core_v1_review_proto_rawDescGZIP(), []int{10}
+	return file_steward_core_v1_review_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *DeleteReviewThreadRequest) GetActorUserId() string {
@@ -796,7 +1068,7 @@ type DeleteReviewThreadResponse struct {
 
 func (x *DeleteReviewThreadResponse) Reset() {
 	*x = DeleteReviewThreadResponse{}
-	mi := &file_steward_core_v1_review_proto_msgTypes[11]
+	mi := &file_steward_core_v1_review_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -808,7 +1080,7 @@ func (x *DeleteReviewThreadResponse) String() string {
 func (*DeleteReviewThreadResponse) ProtoMessage() {}
 
 func (x *DeleteReviewThreadResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_steward_core_v1_review_proto_msgTypes[11]
+	mi := &file_steward_core_v1_review_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -821,7 +1093,244 @@ func (x *DeleteReviewThreadResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteReviewThreadResponse.ProtoReflect.Descriptor instead.
 func (*DeleteReviewThreadResponse) Descriptor() ([]byte, []int) {
-	return file_steward_core_v1_review_proto_rawDescGZIP(), []int{11}
+	return file_steward_core_v1_review_proto_rawDescGZIP(), []int{13}
+}
+
+// CounterReviewSuggestionRequest adds a round from the side whose turn it is.
+// For the REVIEWER side the actor must be the thread's approver.
+type CounterReviewSuggestionRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ActorUserId   string                 `protobuf:"bytes,1,opt,name=actor_user_id,json=actorUserId,proto3" json:"actor_user_id,omitempty"`
+	ActorSide     ReviewSide             `protobuf:"varint,2,opt,name=actor_side,json=actorSide,proto3,enum=steward.core.v1.ReviewSide" json:"actor_side,omitempty"`
+	ThreadId      string                 `protobuf:"bytes,3,opt,name=thread_id,json=threadId,proto3" json:"thread_id,omitempty"`
+	Text          string                 `protobuf:"bytes,4,opt,name=text,proto3" json:"text,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CounterReviewSuggestionRequest) Reset() {
+	*x = CounterReviewSuggestionRequest{}
+	mi := &file_steward_core_v1_review_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CounterReviewSuggestionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CounterReviewSuggestionRequest) ProtoMessage() {}
+
+func (x *CounterReviewSuggestionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_steward_core_v1_review_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CounterReviewSuggestionRequest.ProtoReflect.Descriptor instead.
+func (*CounterReviewSuggestionRequest) Descriptor() ([]byte, []int) {
+	return file_steward_core_v1_review_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *CounterReviewSuggestionRequest) GetActorUserId() string {
+	if x != nil {
+		return x.ActorUserId
+	}
+	return ""
+}
+
+func (x *CounterReviewSuggestionRequest) GetActorSide() ReviewSide {
+	if x != nil {
+		return x.ActorSide
+	}
+	return ReviewSide_REVIEW_SIDE_UNSPECIFIED
+}
+
+func (x *CounterReviewSuggestionRequest) GetThreadId() string {
+	if x != nil {
+		return x.ThreadId
+	}
+	return ""
+}
+
+func (x *CounterReviewSuggestionRequest) GetText() string {
+	if x != nil {
+		return x.Text
+	}
+	return ""
+}
+
+type CounterReviewSuggestionResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Thread        *ReviewThread          `protobuf:"bytes,1,opt,name=thread,proto3" json:"thread,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CounterReviewSuggestionResponse) Reset() {
+	*x = CounterReviewSuggestionResponse{}
+	mi := &file_steward_core_v1_review_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CounterReviewSuggestionResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CounterReviewSuggestionResponse) ProtoMessage() {}
+
+func (x *CounterReviewSuggestionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_steward_core_v1_review_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CounterReviewSuggestionResponse.ProtoReflect.Descriptor instead.
+func (*CounterReviewSuggestionResponse) Descriptor() ([]byte, []int) {
+	return file_steward_core_v1_review_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *CounterReviewSuggestionResponse) GetThread() *ReviewThread {
+	if x != nil {
+		return x.Thread
+	}
+	return nil
+}
+
+// CloseReviewSuggestionRequest ends the suggestion with one outcome, resolves
+// the thread and records the text and the closer. reason is required for
+// NOT_AGREED. For the REVIEWER side the actor must be the thread's approver.
+type CloseReviewSuggestionRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ActorUserId   string                 `protobuf:"bytes,1,opt,name=actor_user_id,json=actorUserId,proto3" json:"actor_user_id,omitempty"`
+	ActorSide     ReviewSide             `protobuf:"varint,2,opt,name=actor_side,json=actorSide,proto3,enum=steward.core.v1.ReviewSide" json:"actor_side,omitempty"`
+	ThreadId      string                 `protobuf:"bytes,3,opt,name=thread_id,json=threadId,proto3" json:"thread_id,omitempty"`
+	Outcome       SuggestionOutcome      `protobuf:"varint,4,opt,name=outcome,proto3,enum=steward.core.v1.SuggestionOutcome" json:"outcome,omitempty"`
+	Reason        string                 `protobuf:"bytes,5,opt,name=reason,proto3" json:"reason,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CloseReviewSuggestionRequest) Reset() {
+	*x = CloseReviewSuggestionRequest{}
+	mi := &file_steward_core_v1_review_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CloseReviewSuggestionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CloseReviewSuggestionRequest) ProtoMessage() {}
+
+func (x *CloseReviewSuggestionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_steward_core_v1_review_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CloseReviewSuggestionRequest.ProtoReflect.Descriptor instead.
+func (*CloseReviewSuggestionRequest) Descriptor() ([]byte, []int) {
+	return file_steward_core_v1_review_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *CloseReviewSuggestionRequest) GetActorUserId() string {
+	if x != nil {
+		return x.ActorUserId
+	}
+	return ""
+}
+
+func (x *CloseReviewSuggestionRequest) GetActorSide() ReviewSide {
+	if x != nil {
+		return x.ActorSide
+	}
+	return ReviewSide_REVIEW_SIDE_UNSPECIFIED
+}
+
+func (x *CloseReviewSuggestionRequest) GetThreadId() string {
+	if x != nil {
+		return x.ThreadId
+	}
+	return ""
+}
+
+func (x *CloseReviewSuggestionRequest) GetOutcome() SuggestionOutcome {
+	if x != nil {
+		return x.Outcome
+	}
+	return SuggestionOutcome_SUGGESTION_OUTCOME_UNSPECIFIED
+}
+
+func (x *CloseReviewSuggestionRequest) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+type CloseReviewSuggestionResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Thread        *ReviewThread          `protobuf:"bytes,1,opt,name=thread,proto3" json:"thread,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CloseReviewSuggestionResponse) Reset() {
+	*x = CloseReviewSuggestionResponse{}
+	mi := &file_steward_core_v1_review_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CloseReviewSuggestionResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CloseReviewSuggestionResponse) ProtoMessage() {}
+
+func (x *CloseReviewSuggestionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_steward_core_v1_review_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CloseReviewSuggestionResponse.ProtoReflect.Descriptor instead.
+func (*CloseReviewSuggestionResponse) Descriptor() ([]byte, []int) {
+	return file_steward_core_v1_review_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *CloseReviewSuggestionResponse) GetThread() *ReviewThread {
+	if x != nil {
+		return x.Thread
+	}
+	return nil
 }
 
 var File_steward_core_v1_review_proto protoreflect.FileDescriptor
@@ -834,7 +1343,7 @@ const file_steward_core_v1_review_proto_rawDesc = "" +
 	"\x0eauthor_user_id\x18\x02 \x01(\tR\fauthorUserId\x12\x12\n" +
 	"\x04body\x18\x03 \x01(\tR\x04body\x129\n" +
 	"\n" +
-	"created_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"\xe2\x02\n" +
+	"created_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"\xa5\x03\n" +
 	"\fReviewThread\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12*\n" +
 	"\x11policy_version_id\x18\x02 \x01(\tR\x0fpolicyVersionId\x12\x14\n" +
@@ -848,7 +1357,28 @@ const file_steward_core_v1_review_proto_rawDesc = "" +
 	"\x10approver_user_id\x18\a \x01(\tR\x0eapproverUserId\x12\x1d\n" +
 	"\n" +
 	"created_by\x18\b \x01(\tR\tcreatedBy\x12:\n" +
-	"\bmessages\x18\t \x03(\v2\x1e.steward.core.v1.ReviewMessageR\bmessagesJ\x04\b\x14\x10\x15\"\x9e\x02\n" +
+	"\bmessages\x18\t \x03(\v2\x1e.steward.core.v1.ReviewMessageR\bmessages\x12A\n" +
+	"\n" +
+	"suggestion\x18\n" +
+	" \x01(\v2!.steward.core.v1.ReviewSuggestionR\n" +
+	"suggestionJ\x04\b\x14\x10\x15\"\xbc\x01\n" +
+	"\x0fSuggestionRound\x12\x10\n" +
+	"\x03seq\x18\x01 \x01(\x05R\x03seq\x12/\n" +
+	"\x04side\x18\x02 \x01(\x0e2\x1b.steward.core.v1.ReviewSideR\x04side\x12\x17\n" +
+	"\auser_id\x18\x03 \x01(\tR\x06userId\x12\x12\n" +
+	"\x04text\x18\x04 \x01(\tR\x04text\x129\n" +
+	"\n" +
+	"created_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"\xde\x02\n" +
+	"\x10ReviewSuggestion\x12\x12\n" +
+	"\x04text\x18\x01 \x01(\tR\x04text\x12/\n" +
+	"\x04turn\x18\x02 \x01(\x0e2\x1b.steward.core.v1.ReviewSideR\x04turn\x128\n" +
+	"\x06rounds\x18\x03 \x03(\v2 .steward.core.v1.SuggestionRoundR\x06rounds\x12<\n" +
+	"\aoutcome\x18\x04 \x01(\x0e2\".steward.core.v1.SuggestionOutcomeR\aoutcome\x12\x16\n" +
+	"\x06reason\x18\x05 \x01(\tR\x06reason\x12\x1b\n" +
+	"\tclosed_by\x18\x06 \x01(\tR\bclosedBy\x12\x1f\n" +
+	"\vclosed_text\x18\a \x01(\tR\n" +
+	"closedText\x127\n" +
+	"\tclosed_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\bclosedAt\"\xc5\x02\n" +
 	"\x16AddReviewThreadRequest\x12\"\n" +
 	"\ractor_user_id\x18\x01 \x01(\tR\vactorUserId\x12:\n" +
 	"\n" +
@@ -859,7 +1389,8 @@ const file_steward_core_v1_review_proto_rawDesc = "" +
 	"occurrence\x18\x05 \x01(\x05R\n" +
 	"occurrence\x12\x12\n" +
 	"\x04body\x18\x06 \x01(\tR\x04body\x12(\n" +
-	"\x10approver_user_id\x18\a \x01(\tR\x0eapproverUserIdJ\x04\b\x14\x10\x15\"P\n" +
+	"\x10approver_user_id\x18\a \x01(\tR\x0eapproverUserId\x12%\n" +
+	"\x0esuggested_text\x18\b \x01(\tR\rsuggestedTextJ\x04\b\x14\x10\x15\"P\n" +
 	"\x17AddReviewThreadResponse\x125\n" +
 	"\x06thread\x18\x01 \x01(\v2\x1d.steward.core.v1.ReviewThreadR\x06thread\"p\n" +
 	"\x18ListReviewThreadsRequest\x12*\n" +
@@ -888,18 +1419,44 @@ const file_steward_core_v1_review_proto_rawDesc = "" +
 	"\n" +
 	"actor_side\x18\x02 \x01(\x0e2\x1b.steward.core.v1.ReviewSideR\tactorSide\x12\x1b\n" +
 	"\tthread_id\x18\x03 \x01(\tR\bthreadId\"\x1c\n" +
-	"\x1aDeleteReviewThreadResponse*[\n" +
+	"\x1aDeleteReviewThreadResponse\"\xb1\x01\n" +
+	"\x1eCounterReviewSuggestionRequest\x12\"\n" +
+	"\ractor_user_id\x18\x01 \x01(\tR\vactorUserId\x12:\n" +
+	"\n" +
+	"actor_side\x18\x02 \x01(\x0e2\x1b.steward.core.v1.ReviewSideR\tactorSide\x12\x1b\n" +
+	"\tthread_id\x18\x03 \x01(\tR\bthreadId\x12\x12\n" +
+	"\x04text\x18\x04 \x01(\tR\x04text\"X\n" +
+	"\x1fCounterReviewSuggestionResponse\x125\n" +
+	"\x06thread\x18\x01 \x01(\v2\x1d.steward.core.v1.ReviewThreadR\x06thread\"\xf1\x01\n" +
+	"\x1cCloseReviewSuggestionRequest\x12\"\n" +
+	"\ractor_user_id\x18\x01 \x01(\tR\vactorUserId\x12:\n" +
+	"\n" +
+	"actor_side\x18\x02 \x01(\x0e2\x1b.steward.core.v1.ReviewSideR\tactorSide\x12\x1b\n" +
+	"\tthread_id\x18\x03 \x01(\tR\bthreadId\x12<\n" +
+	"\aoutcome\x18\x04 \x01(\x0e2\".steward.core.v1.SuggestionOutcomeR\aoutcome\x12\x16\n" +
+	"\x06reason\x18\x05 \x01(\tR\x06reason\"V\n" +
+	"\x1dCloseReviewSuggestionResponse\x125\n" +
+	"\x06thread\x18\x01 \x01(\v2\x1d.steward.core.v1.ReviewThreadR\x06thread*[\n" +
 	"\n" +
 	"ReviewSide\x12\x1b\n" +
 	"\x17REVIEW_SIDE_UNSPECIFIED\x10\x00\x12\x16\n" +
 	"\x12REVIEW_SIDE_AUTHOR\x10\x01\x12\x18\n" +
-	"\x14REVIEW_SIDE_REVIEWER\x10\x022\xba\x04\n" +
+	"\x14REVIEW_SIDE_REVIEWER\x10\x02*\xdb\x01\n" +
+	"\x11SuggestionOutcome\x12\"\n" +
+	"\x1eSUGGESTION_OUTCOME_UNSPECIFIED\x10\x00\x12\x1e\n" +
+	"\x1aSUGGESTION_OUTCOME_CHANGED\x10\x01\x12\x1d\n" +
+	"\x19SUGGESTION_OUTCOME_AGREED\x10\x02\x12\x1e\n" +
+	"\x1aSUGGESTION_OUTCOME_REMOVED\x10\x03\x12 \n" +
+	"\x1cSUGGESTION_OUTCOME_WITHDRAWN\x10\x04\x12!\n" +
+	"\x1dSUGGESTION_OUTCOME_NOT_AGREED\x10\x052\xb0\x06\n" +
 	"\rReviewService\x12d\n" +
 	"\x0fAddReviewThread\x12'.steward.core.v1.AddReviewThreadRequest\x1a(.steward.core.v1.AddReviewThreadResponse\x12j\n" +
 	"\x11ListReviewThreads\x12).steward.core.v1.ListReviewThreadsRequest\x1a*.steward.core.v1.ListReviewThreadsResponse\x12j\n" +
 	"\x11ReplyReviewThread\x12).steward.core.v1.ReplyReviewThreadRequest\x1a*.steward.core.v1.ReplyReviewThreadResponse\x12|\n" +
 	"\x17SetReviewThreadResolved\x12/.steward.core.v1.SetReviewThreadResolvedRequest\x1a0.steward.core.v1.SetReviewThreadResolvedResponse\x12m\n" +
-	"\x12DeleteReviewThread\x12*.steward.core.v1.DeleteReviewThreadRequest\x1a+.steward.core.v1.DeleteReviewThreadResponseBCZAgithub.com/Steward-GRC/steward-core/gen/go/steward/core/v1;corev1b\x06proto3"
+	"\x12DeleteReviewThread\x12*.steward.core.v1.DeleteReviewThreadRequest\x1a+.steward.core.v1.DeleteReviewThreadResponse\x12|\n" +
+	"\x17CounterReviewSuggestion\x12/.steward.core.v1.CounterReviewSuggestionRequest\x1a0.steward.core.v1.CounterReviewSuggestionResponse\x12v\n" +
+	"\x15CloseReviewSuggestion\x12-.steward.core.v1.CloseReviewSuggestionRequest\x1a..steward.core.v1.CloseReviewSuggestionResponseBCZAgithub.com/Steward-GRC/steward-core/gen/go/steward/core/v1;corev1b\x06proto3"
 
 var (
 	file_steward_core_v1_review_proto_rawDescOnce sync.Once
@@ -913,51 +1470,74 @@ func file_steward_core_v1_review_proto_rawDescGZIP() []byte {
 	return file_steward_core_v1_review_proto_rawDescData
 }
 
-var file_steward_core_v1_review_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_steward_core_v1_review_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
+var file_steward_core_v1_review_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
+var file_steward_core_v1_review_proto_msgTypes = make([]protoimpl.MessageInfo, 18)
 var file_steward_core_v1_review_proto_goTypes = []any{
 	(ReviewSide)(0),                         // 0: steward.core.v1.ReviewSide
-	(*ReviewMessage)(nil),                   // 1: steward.core.v1.ReviewMessage
-	(*ReviewThread)(nil),                    // 2: steward.core.v1.ReviewThread
-	(*AddReviewThreadRequest)(nil),          // 3: steward.core.v1.AddReviewThreadRequest
-	(*AddReviewThreadResponse)(nil),         // 4: steward.core.v1.AddReviewThreadResponse
-	(*ListReviewThreadsRequest)(nil),        // 5: steward.core.v1.ListReviewThreadsRequest
-	(*ListReviewThreadsResponse)(nil),       // 6: steward.core.v1.ListReviewThreadsResponse
-	(*ReplyReviewThreadRequest)(nil),        // 7: steward.core.v1.ReplyReviewThreadRequest
-	(*ReplyReviewThreadResponse)(nil),       // 8: steward.core.v1.ReplyReviewThreadResponse
-	(*SetReviewThreadResolvedRequest)(nil),  // 9: steward.core.v1.SetReviewThreadResolvedRequest
-	(*SetReviewThreadResolvedResponse)(nil), // 10: steward.core.v1.SetReviewThreadResolvedResponse
-	(*DeleteReviewThreadRequest)(nil),       // 11: steward.core.v1.DeleteReviewThreadRequest
-	(*DeleteReviewThreadResponse)(nil),      // 12: steward.core.v1.DeleteReviewThreadResponse
-	(*timestamppb.Timestamp)(nil),           // 13: google.protobuf.Timestamp
+	(SuggestionOutcome)(0),                  // 1: steward.core.v1.SuggestionOutcome
+	(*ReviewMessage)(nil),                   // 2: steward.core.v1.ReviewMessage
+	(*ReviewThread)(nil),                    // 3: steward.core.v1.ReviewThread
+	(*SuggestionRound)(nil),                 // 4: steward.core.v1.SuggestionRound
+	(*ReviewSuggestion)(nil),                // 5: steward.core.v1.ReviewSuggestion
+	(*AddReviewThreadRequest)(nil),          // 6: steward.core.v1.AddReviewThreadRequest
+	(*AddReviewThreadResponse)(nil),         // 7: steward.core.v1.AddReviewThreadResponse
+	(*ListReviewThreadsRequest)(nil),        // 8: steward.core.v1.ListReviewThreadsRequest
+	(*ListReviewThreadsResponse)(nil),       // 9: steward.core.v1.ListReviewThreadsResponse
+	(*ReplyReviewThreadRequest)(nil),        // 10: steward.core.v1.ReplyReviewThreadRequest
+	(*ReplyReviewThreadResponse)(nil),       // 11: steward.core.v1.ReplyReviewThreadResponse
+	(*SetReviewThreadResolvedRequest)(nil),  // 12: steward.core.v1.SetReviewThreadResolvedRequest
+	(*SetReviewThreadResolvedResponse)(nil), // 13: steward.core.v1.SetReviewThreadResolvedResponse
+	(*DeleteReviewThreadRequest)(nil),       // 14: steward.core.v1.DeleteReviewThreadRequest
+	(*DeleteReviewThreadResponse)(nil),      // 15: steward.core.v1.DeleteReviewThreadResponse
+	(*CounterReviewSuggestionRequest)(nil),  // 16: steward.core.v1.CounterReviewSuggestionRequest
+	(*CounterReviewSuggestionResponse)(nil), // 17: steward.core.v1.CounterReviewSuggestionResponse
+	(*CloseReviewSuggestionRequest)(nil),    // 18: steward.core.v1.CloseReviewSuggestionRequest
+	(*CloseReviewSuggestionResponse)(nil),   // 19: steward.core.v1.CloseReviewSuggestionResponse
+	(*timestamppb.Timestamp)(nil),           // 20: google.protobuf.Timestamp
 }
 var file_steward_core_v1_review_proto_depIdxs = []int32{
-	13, // 0: steward.core.v1.ReviewMessage.created_at:type_name -> google.protobuf.Timestamp
-	13, // 1: steward.core.v1.ReviewThread.created_at:type_name -> google.protobuf.Timestamp
-	1,  // 2: steward.core.v1.ReviewThread.messages:type_name -> steward.core.v1.ReviewMessage
-	0,  // 3: steward.core.v1.AddReviewThreadRequest.actor_side:type_name -> steward.core.v1.ReviewSide
-	2,  // 4: steward.core.v1.AddReviewThreadResponse.thread:type_name -> steward.core.v1.ReviewThread
-	2,  // 5: steward.core.v1.ListReviewThreadsResponse.threads:type_name -> steward.core.v1.ReviewThread
-	0,  // 6: steward.core.v1.ReplyReviewThreadRequest.actor_side:type_name -> steward.core.v1.ReviewSide
-	2,  // 7: steward.core.v1.ReplyReviewThreadResponse.thread:type_name -> steward.core.v1.ReviewThread
-	0,  // 8: steward.core.v1.SetReviewThreadResolvedRequest.actor_side:type_name -> steward.core.v1.ReviewSide
-	2,  // 9: steward.core.v1.SetReviewThreadResolvedResponse.thread:type_name -> steward.core.v1.ReviewThread
-	0,  // 10: steward.core.v1.DeleteReviewThreadRequest.actor_side:type_name -> steward.core.v1.ReviewSide
-	3,  // 11: steward.core.v1.ReviewService.AddReviewThread:input_type -> steward.core.v1.AddReviewThreadRequest
-	5,  // 12: steward.core.v1.ReviewService.ListReviewThreads:input_type -> steward.core.v1.ListReviewThreadsRequest
-	7,  // 13: steward.core.v1.ReviewService.ReplyReviewThread:input_type -> steward.core.v1.ReplyReviewThreadRequest
-	9,  // 14: steward.core.v1.ReviewService.SetReviewThreadResolved:input_type -> steward.core.v1.SetReviewThreadResolvedRequest
-	11, // 15: steward.core.v1.ReviewService.DeleteReviewThread:input_type -> steward.core.v1.DeleteReviewThreadRequest
-	4,  // 16: steward.core.v1.ReviewService.AddReviewThread:output_type -> steward.core.v1.AddReviewThreadResponse
-	6,  // 17: steward.core.v1.ReviewService.ListReviewThreads:output_type -> steward.core.v1.ListReviewThreadsResponse
-	8,  // 18: steward.core.v1.ReviewService.ReplyReviewThread:output_type -> steward.core.v1.ReplyReviewThreadResponse
-	10, // 19: steward.core.v1.ReviewService.SetReviewThreadResolved:output_type -> steward.core.v1.SetReviewThreadResolvedResponse
-	12, // 20: steward.core.v1.ReviewService.DeleteReviewThread:output_type -> steward.core.v1.DeleteReviewThreadResponse
-	16, // [16:21] is the sub-list for method output_type
-	11, // [11:16] is the sub-list for method input_type
-	11, // [11:11] is the sub-list for extension type_name
-	11, // [11:11] is the sub-list for extension extendee
-	0,  // [0:11] is the sub-list for field type_name
+	20, // 0: steward.core.v1.ReviewMessage.created_at:type_name -> google.protobuf.Timestamp
+	20, // 1: steward.core.v1.ReviewThread.created_at:type_name -> google.protobuf.Timestamp
+	2,  // 2: steward.core.v1.ReviewThread.messages:type_name -> steward.core.v1.ReviewMessage
+	5,  // 3: steward.core.v1.ReviewThread.suggestion:type_name -> steward.core.v1.ReviewSuggestion
+	0,  // 4: steward.core.v1.SuggestionRound.side:type_name -> steward.core.v1.ReviewSide
+	20, // 5: steward.core.v1.SuggestionRound.created_at:type_name -> google.protobuf.Timestamp
+	0,  // 6: steward.core.v1.ReviewSuggestion.turn:type_name -> steward.core.v1.ReviewSide
+	4,  // 7: steward.core.v1.ReviewSuggestion.rounds:type_name -> steward.core.v1.SuggestionRound
+	1,  // 8: steward.core.v1.ReviewSuggestion.outcome:type_name -> steward.core.v1.SuggestionOutcome
+	20, // 9: steward.core.v1.ReviewSuggestion.closed_at:type_name -> google.protobuf.Timestamp
+	0,  // 10: steward.core.v1.AddReviewThreadRequest.actor_side:type_name -> steward.core.v1.ReviewSide
+	3,  // 11: steward.core.v1.AddReviewThreadResponse.thread:type_name -> steward.core.v1.ReviewThread
+	3,  // 12: steward.core.v1.ListReviewThreadsResponse.threads:type_name -> steward.core.v1.ReviewThread
+	0,  // 13: steward.core.v1.ReplyReviewThreadRequest.actor_side:type_name -> steward.core.v1.ReviewSide
+	3,  // 14: steward.core.v1.ReplyReviewThreadResponse.thread:type_name -> steward.core.v1.ReviewThread
+	0,  // 15: steward.core.v1.SetReviewThreadResolvedRequest.actor_side:type_name -> steward.core.v1.ReviewSide
+	3,  // 16: steward.core.v1.SetReviewThreadResolvedResponse.thread:type_name -> steward.core.v1.ReviewThread
+	0,  // 17: steward.core.v1.DeleteReviewThreadRequest.actor_side:type_name -> steward.core.v1.ReviewSide
+	0,  // 18: steward.core.v1.CounterReviewSuggestionRequest.actor_side:type_name -> steward.core.v1.ReviewSide
+	3,  // 19: steward.core.v1.CounterReviewSuggestionResponse.thread:type_name -> steward.core.v1.ReviewThread
+	0,  // 20: steward.core.v1.CloseReviewSuggestionRequest.actor_side:type_name -> steward.core.v1.ReviewSide
+	1,  // 21: steward.core.v1.CloseReviewSuggestionRequest.outcome:type_name -> steward.core.v1.SuggestionOutcome
+	3,  // 22: steward.core.v1.CloseReviewSuggestionResponse.thread:type_name -> steward.core.v1.ReviewThread
+	6,  // 23: steward.core.v1.ReviewService.AddReviewThread:input_type -> steward.core.v1.AddReviewThreadRequest
+	8,  // 24: steward.core.v1.ReviewService.ListReviewThreads:input_type -> steward.core.v1.ListReviewThreadsRequest
+	10, // 25: steward.core.v1.ReviewService.ReplyReviewThread:input_type -> steward.core.v1.ReplyReviewThreadRequest
+	12, // 26: steward.core.v1.ReviewService.SetReviewThreadResolved:input_type -> steward.core.v1.SetReviewThreadResolvedRequest
+	14, // 27: steward.core.v1.ReviewService.DeleteReviewThread:input_type -> steward.core.v1.DeleteReviewThreadRequest
+	16, // 28: steward.core.v1.ReviewService.CounterReviewSuggestion:input_type -> steward.core.v1.CounterReviewSuggestionRequest
+	18, // 29: steward.core.v1.ReviewService.CloseReviewSuggestion:input_type -> steward.core.v1.CloseReviewSuggestionRequest
+	7,  // 30: steward.core.v1.ReviewService.AddReviewThread:output_type -> steward.core.v1.AddReviewThreadResponse
+	9,  // 31: steward.core.v1.ReviewService.ListReviewThreads:output_type -> steward.core.v1.ListReviewThreadsResponse
+	11, // 32: steward.core.v1.ReviewService.ReplyReviewThread:output_type -> steward.core.v1.ReplyReviewThreadResponse
+	13, // 33: steward.core.v1.ReviewService.SetReviewThreadResolved:output_type -> steward.core.v1.SetReviewThreadResolvedResponse
+	15, // 34: steward.core.v1.ReviewService.DeleteReviewThread:output_type -> steward.core.v1.DeleteReviewThreadResponse
+	17, // 35: steward.core.v1.ReviewService.CounterReviewSuggestion:output_type -> steward.core.v1.CounterReviewSuggestionResponse
+	19, // 36: steward.core.v1.ReviewService.CloseReviewSuggestion:output_type -> steward.core.v1.CloseReviewSuggestionResponse
+	30, // [30:37] is the sub-list for method output_type
+	23, // [23:30] is the sub-list for method input_type
+	23, // [23:23] is the sub-list for extension type_name
+	23, // [23:23] is the sub-list for extension extendee
+	0,  // [0:23] is the sub-list for field type_name
 }
 
 func init() { file_steward_core_v1_review_proto_init() }
@@ -970,8 +1550,8 @@ func file_steward_core_v1_review_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_steward_core_v1_review_proto_rawDesc), len(file_steward_core_v1_review_proto_rawDesc)),
-			NumEnums:      1,
-			NumMessages:   12,
+			NumEnums:      2,
+			NumMessages:   18,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

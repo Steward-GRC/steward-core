@@ -59,6 +59,14 @@ func (f *fakeReviewBackend) CreateThread(_ context.Context, t domain.ReviewThrea
 		t.Messages[i].ID = uuid.New()
 		t.Messages[i].CreatedAt = t.CreatedAt
 	}
+	if t.Suggestion != nil {
+		sg := *t.Suggestion
+		sg.Rounds = append([]domain.SuggestionRound(nil), sg.Rounds...)
+		for i := range sg.Rounds {
+			sg.Rounds[i].CreatedAt = t.CreatedAt
+		}
+		t.Suggestion = &sg
+	}
 	f.threads = append(f.threads, t)
 	return t, nil
 }
@@ -122,6 +130,53 @@ func (f *fakeReviewBackend) DeleteThread(_ context.Context, id uuid.UUID) error 
 	}
 	f.threads = slices.Delete(f.threads, i, i+1)
 	return nil
+}
+
+// AppendRound and CloseSuggestion mirror the store: the round must be the next
+// one, and an ended suggestion takes nothing more.
+func (f *fakeReviewBackend) suggestionOf(id uuid.UUID) (int, *domain.ReviewSuggestion, error) {
+	i := f.find(id)
+	if i < 0 {
+		return 0, nil, store.ErrReviewThreadNotFound
+	}
+	sg := f.threads[i].Suggestion
+	if sg == nil {
+		return 0, nil, store.ErrSuggestionMissing
+	}
+	if !sg.Open() {
+		return 0, nil, store.ErrSuggestionEnded
+	}
+	return i, sg, nil
+}
+
+func (f *fakeReviewBackend) AppendRound(_ context.Context, id uuid.UUID, r domain.SuggestionRound) (domain.ReviewThread, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	i, sg, err := f.suggestionOf(id)
+	if err != nil {
+		return domain.ReviewThread{}, err
+	}
+	if len(sg.Rounds) != r.Seq-1 {
+		return domain.ReviewThread{}, store.ErrSuggestionChanged
+	}
+	r.CreatedAt = time.Now()
+	sg.Rounds = append(sg.Rounds, r)
+	return f.threads[i], nil
+}
+
+func (f *fakeReviewBackend) CloseSuggestion(_ context.Context, id uuid.UUID, c domain.SuggestionClose) (domain.ReviewThread, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	i, sg, err := f.suggestionOf(id)
+	if err != nil {
+		return domain.ReviewThread{}, err
+	}
+	if len(sg.Rounds) != c.Rounds {
+		return domain.ReviewThread{}, store.ErrSuggestionChanged
+	}
+	sg.Outcome, sg.Reason, sg.ClosedBy, sg.ClosedText, sg.ClosedAt = c.Outcome, c.Reason, c.ClosedBy, c.ClosedText, time.Now()
+	f.threads[i].Resolved = true
+	return f.threads[i], nil
 }
 
 type auditSink struct {
@@ -499,4 +554,278 @@ func TestReviewHandlerWithoutAuditor(t *testing.T) {
 		Quote: "x", Occurrence: 1, Body: "Hi", ApproverUserId: a,
 	})
 	require.NoError(t, err)
+}
+
+// ---- suggestions and counters (core#54) ----
+
+func (f *reviewFixture) propose(t *testing.T, text string) *corev1.ReviewThread {
+	t.Helper()
+	resp, err := f.h.AddReviewThread(context.Background(), &corev1.AddReviewThreadRequest{
+		ActorUserId: f.charlie, ActorSide: corev1.ReviewSide_REVIEW_SIDE_REVIEWER, PolicyVersionId: f.version,
+		Quote: "seven years", Occurrence: 1, Body: "Shorter?", ApproverUserId: f.charlie, SuggestedText: text,
+	})
+	require.NoError(t, err)
+	return resp.GetThread()
+}
+
+func (f *reviewFixture) counter(actor string, side corev1.ReviewSide, id, text string) (*corev1.ReviewThread, error) {
+	resp, err := f.h.CounterReviewSuggestion(context.Background(), &corev1.CounterReviewSuggestionRequest{
+		ActorUserId: actor, ActorSide: side, ThreadId: id, Text: text,
+	})
+	return resp.GetThread(), err
+}
+
+func (f *reviewFixture) closeAs(actor string, side corev1.ReviewSide, id string, o corev1.SuggestionOutcome, reason string) (*corev1.ReviewThread, error) {
+	resp, err := f.h.CloseReviewSuggestion(context.Background(), &corev1.CloseReviewSuggestionRequest{
+		ActorUserId: actor, ActorSide: side, ThreadId: id, Outcome: o, Reason: reason,
+	})
+	return resp.GetThread(), err
+}
+
+const (
+	authorSide   = corev1.ReviewSide_REVIEW_SIDE_AUTHOR
+	reviewerSide = corev1.ReviewSide_REVIEW_SIDE_REVIEWER
+)
+
+// mock: starting a suggestion / opens it on the author's turn when a reviewer proposes
+func TestAddReviewThreadWithASuggestionOpensOnTheAuthorsTurn(t *testing.T) {
+	f := newReviewFixture(t)
+	th := f.propose(t, "six years")
+	sg := th.GetSuggestion()
+	require.NotNil(t, sg)
+	require.Equal(t, "six years", sg.GetText())
+	require.Equal(t, authorSide, sg.GetTurn())
+	require.Equal(t, corev1.SuggestionOutcome_SUGGESTION_OUTCOME_UNSPECIFIED, sg.GetOutcome())
+	require.Len(t, sg.GetRounds(), 1)
+	require.Equal(t, reviewerSide, sg.GetRounds()[0].GetSide())
+	require.Equal(t, f.charlie, sg.GetRounds()[0].GetUserId())
+	require.Equal(t, int32(1), sg.GetRounds()[0].GetSeq())
+	require.NotNil(t, sg.GetRounds()[0].GetCreatedAt())
+}
+
+// mock: starting a suggestion / opens it on the reviewer's turn when the author proposes
+func TestAddReviewThreadWithAnAuthorSuggestionOpensOnTheReviewersTurn(t *testing.T) {
+	f := newReviewFixture(t)
+	resp, err := f.h.AddReviewThread(context.Background(), &corev1.AddReviewThreadRequest{
+		ActorUserId: f.bob, ActorSide: authorSide, PolicyVersionId: f.version,
+		Quote: "seven years", Occurrence: 1, Body: "How about this?", ApproverUserId: f.charlie, SuggestedText: "five years",
+	})
+	require.NoError(t, err)
+	require.Equal(t, reviewerSide, resp.GetThread().GetSuggestion().GetTurn())
+}
+
+// mock: starting a suggestion / is a plain comment when no text, or the same text, is proposed
+func TestAddReviewThreadWithNoOrSameTextIsAPlainComment(t *testing.T) {
+	f := newReviewFixture(t)
+	require.Nil(t, f.propose(t, "").GetSuggestion())
+	require.Nil(t, f.propose(t, "seven years").GetSuggestion())
+	require.Nil(t, f.propose(t, "   ").GetSuggestion())
+}
+
+func TestAddReviewThreadRefusesSuggestedTextOverTheLimit(t *testing.T) {
+	f := newReviewFixture(t)
+	_, err := f.h.AddReviewThread(context.Background(), &corev1.AddReviewThreadRequest{
+		ActorUserId: f.charlie, ActorSide: reviewerSide, PolicyVersionId: f.version,
+		Quote: "x", Occurrence: 1, Body: "Why?", ApproverUserId: f.charlie, SuggestedText: strings.Repeat("a", 31),
+	})
+	requireCode(t, err, codes.InvalidArgument)
+	require.Empty(t, f.backend.threads, "nothing is stored for a refused proposal")
+}
+
+// mock: starting a suggestion / comes back on the version's thread list
+func TestListReviewThreadsCarriesTheSuggestion(t *testing.T) {
+	f := newReviewFixture(t)
+	th := f.propose(t, "six years")
+	resp, err := f.h.ListReviewThreads(context.Background(), &corev1.ListReviewThreadsRequest{PolicyVersionId: f.version})
+	require.NoError(t, err)
+	require.Equal(t, th.GetId(), resp.GetThreads()[0].GetId())
+	require.Equal(t, "six years", resp.GetThreads()[0].GetSuggestion().GetText())
+}
+
+// mock: countering / lets the side whose turn it is counter, and flips the turn
+func TestCounterFlipsTheTurnAndKeepsTheRounds(t *testing.T) {
+	f := newReviewFixture(t)
+	th := f.propose(t, "six years")
+	got, err := f.counter(f.bob, authorSide, th.GetId(), "five years")
+	require.NoError(t, err)
+	sg := got.GetSuggestion()
+	require.Equal(t, "five years", sg.GetText())
+	require.Equal(t, reviewerSide, sg.GetTurn())
+	require.Len(t, sg.GetRounds(), 2)
+	require.Equal(t, "six years", sg.GetRounds()[0].GetText())
+	require.Equal(t, authorSide, sg.GetRounds()[1].GetSide())
+	require.Equal(t, f.bob, sg.GetRounds()[1].GetUserId())
+
+	got, err = f.counter(f.charlie, reviewerSide, th.GetId(), "four years")
+	require.NoError(t, err)
+	require.Equal(t, authorSide, got.GetSuggestion().GetTurn())
+	require.Len(t, got.GetSuggestion().GetRounds(), 3)
+}
+
+// mock: countering / refuses a counter out of turn, an empty one, and one on a plain comment
+func TestCounterRefusedOutOfTurnEmptyAndOnAPlainComment(t *testing.T) {
+	f := newReviewFixture(t)
+	th := f.propose(t, "six years")
+	_, err := f.counter(f.charlie, reviewerSide, th.GetId(), "four years")
+	requireCode(t, err, codes.FailedPrecondition)
+	_, err = f.counter(f.bob, authorSide, th.GetId(), "  ")
+	requireCode(t, err, codes.InvalidArgument)
+	_, err = f.counter(f.bob, authorSide, th.GetId(), strings.Repeat("a", 31))
+	requireCode(t, err, codes.InvalidArgument)
+	plain := f.propose(t, "")
+	_, err = f.counter(f.bob, authorSide, plain.GetId(), "x")
+	requireCode(t, err, codes.FailedPrecondition)
+	_, err = f.counter(f.bob, authorSide, uuid.NewString(), "x")
+	requireCode(t, err, codes.NotFound)
+	_, err = f.counter("nope", authorSide, th.GetId(), "x")
+	requireCode(t, err, codes.InvalidArgument)
+	_, err = f.counter(f.bob, corev1.ReviewSide_REVIEW_SIDE_UNSPECIFIED, th.GetId(), "x")
+	requireCode(t, err, codes.InvalidArgument)
+	require.Len(t, f.backend.threads[0].Suggestion.Rounds, 1, "no refused counter is stored")
+}
+
+// mock: countering / keeps someone outside the review out (core: a reviewer must be the thread's approver)
+func TestCounterAndCloseByAnotherReviewerAreDenied(t *testing.T) {
+	f := newReviewFixture(t)
+	th := f.propose(t, "six years")
+	_, err := f.counter(f.bob, authorSide, th.GetId(), "five years")
+	require.NoError(t, err)
+	_, err = f.counter(f.alice, reviewerSide, th.GetId(), "four years")
+	requireCode(t, err, codes.PermissionDenied)
+	_, err = f.closeAs(f.alice, reviewerSide, th.GetId(), corev1.SuggestionOutcome_SUGGESTION_OUTCOME_AGREED, "")
+	requireCode(t, err, codes.PermissionDenied)
+}
+
+// mock: closing / lets the author change it, which resolves the thread and records the text
+func TestAuthorChangesItResolvesAndRecordsTheTextAndCloser(t *testing.T) {
+	f := newReviewFixture(t)
+	th := f.propose(t, "six years")
+	got, err := f.closeAs(f.bob, authorSide, th.GetId(), corev1.SuggestionOutcome_SUGGESTION_OUTCOME_CHANGED, "")
+	require.NoError(t, err)
+	require.True(t, got.GetResolved())
+	sg := got.GetSuggestion()
+	require.Equal(t, corev1.SuggestionOutcome_SUGGESTION_OUTCOME_CHANGED, sg.GetOutcome())
+	require.Equal(t, "six years", sg.GetClosedText())
+	require.Equal(t, f.bob, sg.GetClosedBy())
+	require.NotNil(t, sg.GetClosedAt())
+}
+
+// mock: closing / lets the author remove the note, and the reviewer agree on their turn
+func TestAuthorRemovesAndReviewerAgrees(t *testing.T) {
+	f := newReviewFixture(t)
+	first := f.propose(t, "six years")
+	got, err := f.closeAs(f.bob, authorSide, first.GetId(), corev1.SuggestionOutcome_SUGGESTION_OUTCOME_REMOVED, "")
+	require.NoError(t, err)
+	require.Equal(t, corev1.SuggestionOutcome_SUGGESTION_OUTCOME_REMOVED, got.GetSuggestion().GetOutcome())
+
+	second := f.propose(t, "six years")
+	_, err = f.counter(f.bob, authorSide, second.GetId(), "five years")
+	require.NoError(t, err)
+	got, err = f.closeAs(f.charlie, reviewerSide, second.GetId(), corev1.SuggestionOutcome_SUGGESTION_OUTCOME_AGREED, "")
+	require.NoError(t, err)
+	require.Equal(t, "five years", got.GetSuggestion().GetClosedText())
+	require.Equal(t, f.charlie, got.GetSuggestion().GetClosedBy())
+}
+
+// mock: closing / does not let the wrong side use an outcome that is not theirs
+func TestWrongSideCannotUseAnOutcomeThatIsNotTheirs(t *testing.T) {
+	f := newReviewFixture(t)
+	th := f.propose(t, "six years")
+	_, err := f.closeAs(f.charlie, reviewerSide, th.GetId(), corev1.SuggestionOutcome_SUGGESTION_OUTCOME_AGREED, "")
+	requireCode(t, err, codes.FailedPrecondition)
+	_, err = f.counter(f.bob, authorSide, th.GetId(), "five years")
+	require.NoError(t, err)
+	_, err = f.closeAs(f.bob, authorSide, th.GetId(), corev1.SuggestionOutcome_SUGGESTION_OUTCOME_CHANGED, "")
+	requireCode(t, err, codes.FailedPrecondition)
+	_, err = f.closeAs(f.bob, authorSide, th.GetId(), corev1.SuggestionOutcome_SUGGESTION_OUTCOME_UNSPECIFIED, "")
+	requireCode(t, err, codes.InvalidArgument)
+	require.True(t, f.backend.threads[0].Suggestion.Open())
+}
+
+// mock: closing / needs a reason for not agreed, and records it
+func TestNotAgreedNeedsAReasonAndRecordsIt(t *testing.T) {
+	f := newReviewFixture(t)
+	th := f.propose(t, "six years")
+	_, err := f.closeAs(f.bob, authorSide, th.GetId(), corev1.SuggestionOutcome_SUGGESTION_OUTCOME_NOT_AGREED, "")
+	requireCode(t, err, codes.InvalidArgument)
+	got, err := f.closeAs(f.bob, authorSide, th.GetId(), corev1.SuggestionOutcome_SUGGESTION_OUTCOME_NOT_AGREED, "Law says seven.")
+	require.NoError(t, err)
+	require.Equal(t, corev1.SuggestionOutcome_SUGGESTION_OUTCOME_NOT_AGREED, got.GetSuggestion().GetOutcome())
+	require.Equal(t, "Law says seven.", got.GetSuggestion().GetReason())
+}
+
+// mock: closing / lets the side that proposed first withdraw while it is not their turn
+func TestFirstProposerWithdrawsWhileNotTheirTurn(t *testing.T) {
+	f := newReviewFixture(t)
+	th := f.propose(t, "six years")
+	got, err := f.closeAs(f.charlie, reviewerSide, th.GetId(), corev1.SuggestionOutcome_SUGGESTION_OUTCOME_WITHDRAWN, "")
+	require.NoError(t, err)
+	require.Equal(t, corev1.SuggestionOutcome_SUGGESTION_OUTCOME_WITHDRAWN, got.GetSuggestion().GetOutcome())
+	other := f.propose(t, "six years")
+	_, err = f.closeAs(f.bob, authorSide, other.GetId(), corev1.SuggestionOutcome_SUGGESTION_OUTCOME_WITHDRAWN, "")
+	requireCode(t, err, codes.FailedPrecondition)
+}
+
+// mock: closing / refuses to close twice, or to counter a closed suggestion
+func TestNoSecondCloseAndNoCounterAfterClose(t *testing.T) {
+	f := newReviewFixture(t)
+	th := f.propose(t, "six years")
+	_, err := f.closeAs(f.bob, authorSide, th.GetId(), corev1.SuggestionOutcome_SUGGESTION_OUTCOME_REMOVED, "")
+	require.NoError(t, err)
+	_, err = f.closeAs(f.bob, authorSide, th.GetId(), corev1.SuggestionOutcome_SUGGESTION_OUTCOME_REMOVED, "")
+	requireCode(t, err, codes.FailedPrecondition)
+	_, err = f.counter(f.bob, authorSide, th.GetId(), "x")
+	requireCode(t, err, codes.FailedPrecondition)
+}
+
+// Go-only (mock silent): the mock does not say what a reopened closed suggestion shows.
+func TestReopeningAClosedSuggestionsThreadKeepsItsOutcome(t *testing.T) {
+	f := newReviewFixture(t)
+	th := f.propose(t, "six years")
+	_, err := f.closeAs(f.bob, authorSide, th.GetId(), corev1.SuggestionOutcome_SUGGESTION_OUTCOME_REMOVED, "")
+	require.NoError(t, err)
+	re, err := f.h.SetReviewThreadResolved(context.Background(), &corev1.SetReviewThreadResolvedRequest{
+		ActorUserId: f.bob, ActorSide: authorSide, ThreadId: th.GetId(), Resolved: false,
+	})
+	require.NoError(t, err)
+	require.False(t, re.GetThread().GetResolved())
+	require.Equal(t, corev1.SuggestionOutcome_SUGGESTION_OUTCOME_REMOVED, re.GetThread().GetSuggestion().GetOutcome())
+	_, err = f.counter(f.bob, authorSide, th.GetId(), "x")
+	requireCode(t, err, codes.FailedPrecondition)
+}
+
+// Audit is ids and outcomes only: never the proposed text, a counter, or a reason.
+func TestSuggestionAuditCarriesIDsAndOutcomeButNeverText(t *testing.T) {
+	f := newReviewFixture(t)
+	th := f.propose(t, "six years secret")
+	_, err := f.counter(f.bob, authorSide, th.GetId(), "five years secret")
+	require.NoError(t, err)
+	_, err = f.closeAs(f.charlie, reviewerSide, th.GetId(), corev1.SuggestionOutcome_SUGGESTION_OUTCOME_NOT_AGREED, "reason secret")
+	require.NoError(t, err)
+
+	var actions []string
+	for _, ev := range f.audit.evs {
+		actions = append(actions, ev.Action)
+		for k, v := range ev.Attributes {
+			require.NotContains(t, v, "secret", "attribute %s of %s", k, ev.Action)
+		}
+		require.NotContains(t, ev.Subject, "secret")
+	}
+	require.Equal(t, []string{"review.thread.created", "review.suggestion.countered", "review.suggestion.closed"}, actions)
+	closed := f.audit.evs[2]
+	require.Equal(t, audit.TierActivity, closed.Tier)
+	require.Equal(t, "not_agreed", closed.Attributes["suggestion_outcome"])
+	require.Equal(t, th.GetId(), closed.Attributes["thread_id"])
+	require.Equal(t, f.charlie, closed.ActorUserID)
+	counter := f.audit.evs[1]
+	require.Equal(t, "2", counter.Attributes["round"])
+}
+
+func TestSuggestionStoreFaultIsUnavailableAndLeaksNothing(t *testing.T) {
+	f := newReviewFixture(t)
+	th := f.propose(t, "six years")
+	f.backend.fail = errors.New("boom with six years")
+	_, err := f.counter(f.bob, authorSide, th.GetId(), "x")
+	require.Error(t, err)
+	require.NotContains(t, err.Error(), "six years")
 }
