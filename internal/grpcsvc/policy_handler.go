@@ -87,7 +87,8 @@ type PolicyHandler struct {
 	linkCopier appendixCopier
 	// versionCache holds published versions only. nil turns caching off.
 	versionCache versionCache
-	// moveTypeGate says whether a category holds a document type, for the bulk move. nil means every
+	// moveTypeGate says whether a category holds a document type, for the bulk move. The default asks
+	// the category's own accepted document types; WithMoveTypeGate replaces it, nil means every
 	// category holds both.
 	moveTypeGate func(domain.Category, domain.DocumentType) bool
 }
@@ -101,7 +102,8 @@ type versionCache interface {
 
 // NewPolicyHandler returns a PolicyHandler. auditor may be nil.
 func NewPolicyHandler(ps PolicyStorer, gs CategoryStorer, ts TemplateStorer, v domain.ContentValidator, auditor auditEmitter) *PolicyHandler {
-	return &PolicyHandler{store: ps, categoryStore: gs, tplStore: ts, validator: v, auditor: auditor}
+	return &PolicyHandler{store: ps, categoryStore: gs, tplStore: ts, validator: v, auditor: auditor,
+		moveTypeGate: categoryAcceptsType}
 }
 
 // WithVersionCache sets the optional read cache.
@@ -159,6 +161,20 @@ func docTypeFromProto(t corev1.DocumentType) domain.DocumentType {
 	default:
 		return domain.DocumentTypePolicy
 	}
+}
+
+// refuseCategoryType is the coded error for a document the category's document types do not take.
+func refuseCategoryType(ctx context.Context, g domain.Category, dt domain.DocumentType) error {
+	if dt == "" {
+		dt = domain.DocumentTypePolicy
+	}
+	accepts := string(g.DocumentTypes)
+	if accepts == "" {
+		accepts = string(domain.CategoryDocumentTypesBoth)
+	}
+	logger.Ctx(ctx).Debug("category refuses document type", log.F("category_id", g.ID.String()),
+		log.F("document_type", string(dt)), log.F("accepts", accepts))
+	return errcodes.Error(ctx, errcodes.CategoryRefusesType(g.Name, string(dt), accepts))
 }
 
 // docTypeToProto never sends UNSPECIFIED: a stored row always has a concrete type.
@@ -281,8 +297,17 @@ func (h *PolicyHandler) CreatePolicy(ctx context.Context, req *corev1.CreatePoli
 	p.TemplateID = tplID
 	p.DocumentType = docTypeFromProto(req.GetDocumentType())
 
+	// The category decides which types it holds; the store checks again inside its transaction in
+	// case the setting changed since this read.
+	if !g.DocumentTypes.Accepts(p.DocumentType) {
+		return nil, refuseCategoryType(ctx, g, p.DocumentType)
+	}
+
 	p, err = h.store.CreatePolicy(ctx, p)
 	if err != nil {
+		if errors.Is(err, store.ErrCategoryRefusesType) {
+			return nil, refuseCategoryType(ctx, g, p.DocumentType)
+		}
 		return nil, status.Errorf(codes.Internal, "create policy: %v", err)
 	}
 	// With no template chosen, the starting draft is the category's default template.
@@ -1053,16 +1078,24 @@ func (h *PolicyHandler) MovePolicy(ctx context.Context, req *corev1.MovePolicyRe
 	if cur.HomeCategoryID == dst {
 		return &corev1.MovePolicyResponse{Policy: policyToProto(cur)}, nil // no-op
 	}
-	// Existence only: the renumber reads the target's code inside the move transaction.
-	if _, err := h.categoryStore.Get(ctx, dst); err != nil {
+	// The renumber reads the target's code inside the move transaction; this read is for existence
+	// and for the kinds of document the target takes.
+	target, err := h.categoryStore.Get(ctx, dst)
+	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, status.Error(codes.NotFound, "target category not found")
 		}
 		logger.Ctx(ctx).Error(err, "get target category failed", log.F("category_id", dst.String()))
 		return nil, status.Error(codes.Internal, "get target category failed")
 	}
+	if !target.DocumentTypes.Accepts(cur.DocumentType) {
+		return nil, refuseCategoryType(ctx, target, cur.DocumentType)
+	}
 	p, err := h.store.SetHomeCategory(ctx, pid, dst)
 	if err != nil {
+		if errors.Is(err, store.ErrCategoryRefusesType) {
+			return nil, refuseCategoryType(ctx, target, cur.DocumentType)
+		}
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, status.Error(codes.NotFound, "policy not found")
 		}
@@ -1935,4 +1968,10 @@ func (h *PolicyHandler) SetPolicyTemplate(ctx context.Context, req *corev1.SetPo
 		})
 	}
 	return &corev1.SetPolicyTemplateResponse{Policy: policyToProto(p)}, nil
+}
+
+// categoryAcceptsType is the bulk move's default type gate: the category's accepted document types
+// decide, so a move refuses a document the target does not take (CATEGORY_REFUSES_TYPE).
+func categoryAcceptsType(c domain.Category, dt domain.DocumentType) bool {
+	return c.DocumentTypes.Accepts(dt)
 }

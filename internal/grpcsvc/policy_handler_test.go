@@ -72,6 +72,9 @@ type fakePolicyStore struct {
 	// deleteErr, when non-nil, is returned by DeletePolicy to exercise the
 	// handler's error mapping (e.g. store.ErrHasPublishedVersion).
 	deleteErr error
+	// createErr and moveErr, when non-nil, are returned by CreatePolicy and SetHomeCategory, the
+	// way the real store answers a category that changed its kind after the handler's check.
+	createErr, moveErr error
 	// reassignAuthorGrants is the author-grant count ReassignUserPolicies reports; the fake holds
 	// no rules.
 	reassignAuthorGrants int
@@ -89,6 +92,9 @@ func newFakePolicyStore() *fakePolicyStore {
 }
 
 func (f *fakePolicyStore) CreatePolicy(_ context.Context, p domain.Policy) (domain.Policy, error) {
+	if f.createErr != nil {
+		return domain.Policy{}, f.createErr
+	}
 	// The real store numbers from the category's code, tested in the store tests; a constant is
 	// enough here.
 	p.Number = "POL-NEW-000001"
@@ -1672,6 +1678,9 @@ func (f *fakePolicyStore) SetSensitivity(_ context.Context, policyID uuid.UUID, 
 }
 
 func (f *fakePolicyStore) SetHomeCategory(_ context.Context, policyID, targetCategoryID uuid.UUID) (domain.Policy, error) {
+	if f.moveErr != nil {
+		return domain.Policy{}, f.moveErr
+	}
 	p, ok := f.policies[policyID]
 	if !ok {
 		return domain.Policy{}, pgx.ErrNoRows

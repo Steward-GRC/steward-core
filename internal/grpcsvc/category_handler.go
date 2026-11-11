@@ -40,6 +40,8 @@ type CategoryStorer interface {
 	ReorderChildren(ctx context.Context, parentID uuid.UUID, orderedIDs []uuid.UUID) ([]domain.Category, error)
 	SetGovernance(ctx context.Context, id uuid.UUID, owners []uuid.UUID, audienceGroupIDs *[]string, ack domain.AckTrigger, cadence domain.ReviewCadence, reviewDate *time.Time, exclusionGroupIDs *[]string, ackEveryone *bool) (domain.Category, error)
 	Subtree(ctx context.Context, rootID uuid.UUID) ([]domain.Category, error)
+	SetDocumentTypes(ctx context.Context, id uuid.UUID, types domain.CategoryDocumentTypes) (domain.Category, error)
+	CountDocuments(ctx context.Context, categoryID uuid.UUID) (store.DocumentCounts, error)
 	GetCategoryRuleset(ctx context.Context, categoryID uuid.UUID) ([]domain.CategoryRule, error)
 	SetCategoryRuleset(ctx context.Context, categoryID uuid.UUID, rules []domain.CategoryRule) ([]domain.CategoryRule, error)
 	// dryRun reads without writing.
@@ -206,7 +208,35 @@ func categoryToProto(g domain.Category) *corev1.Category {
 		AckEveryone:           ackEveryone,
 		AckEveryoneSet:        ackEveryoneSet,
 		OrderIndex:            toInt32(g.OrderIndex),
+		DocumentTypes:         categoryDocumentTypesToProto(g.DocumentTypes),
 	}
+}
+
+func categoryDocumentTypesFromProto(t corev1.CategoryDocumentTypes) (domain.CategoryDocumentTypes, bool) {
+	switch t {
+	case corev1.CategoryDocumentTypes_CATEGORY_DOCUMENT_TYPES_BOTH:
+		return domain.CategoryDocumentTypesBoth, true
+	case corev1.CategoryDocumentTypes_CATEGORY_DOCUMENT_TYPES_POLICIES:
+		return domain.CategoryDocumentTypesPolicies, true
+	case corev1.CategoryDocumentTypes_CATEGORY_DOCUMENT_TYPES_PROCEDURES:
+		return domain.CategoryDocumentTypesProcedures, true
+	case corev1.CategoryDocumentTypes_CATEGORY_DOCUMENT_TYPES_NONE:
+		return domain.CategoryDocumentTypesNone, true
+	}
+	return "", false
+}
+
+// categoryDocumentTypesToProto never sends UNSPECIFIED: an unset value reads as both.
+func categoryDocumentTypesToProto(t domain.CategoryDocumentTypes) corev1.CategoryDocumentTypes {
+	switch t {
+	case domain.CategoryDocumentTypesPolicies:
+		return corev1.CategoryDocumentTypes_CATEGORY_DOCUMENT_TYPES_POLICIES
+	case domain.CategoryDocumentTypesProcedures:
+		return corev1.CategoryDocumentTypes_CATEGORY_DOCUMENT_TYPES_PROCEDURES
+	case domain.CategoryDocumentTypesNone:
+		return corev1.CategoryDocumentTypes_CATEGORY_DOCUMENT_TYPES_NONE
+	}
+	return corev1.CategoryDocumentTypes_CATEGORY_DOCUMENT_TYPES_BOTH
 }
 
 func nilableUUID(id uuid.UUID) string {
@@ -295,6 +325,64 @@ func (h *CategoryHandler) ListCategoryChildren(ctx context.Context, req *corev1.
 		out = append(out, categoryToProto(g))
 	}
 	return &corev1.ListCategoryChildrenResponse{Categories: out}, nil
+}
+
+// SetCategoryDocumentTypes handles CategoryService.SetCategoryDocumentTypes. A narrowing that would
+// strand live documents is refused with CATEGORY_HOLDS_DOCUMENTS and the counts.
+func (h *CategoryHandler) SetCategoryDocumentTypes(ctx context.Context, req *corev1.SetCategoryDocumentTypesRequest) (*corev1.SetCategoryDocumentTypesResponse, error) {
+	id, err := uuid.Parse(req.GetId())
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid id: %v", err)
+	}
+	types, ok := categoryDocumentTypesFromProto(req.GetDocumentTypes())
+	if !ok {
+		return nil, status.Error(codes.InvalidArgument, "document_types is required")
+	}
+	logger.Ctx(ctx).Debug("set category document types", log.F("category_id", id.String()), log.F("document_types", string(types)))
+	g, err := h.store.SetDocumentTypes(ctx, id, types)
+	if err != nil {
+		var stranded *store.StrandedDocumentsError
+		switch {
+		case errors.As(err, &stranded):
+			name := id.String()
+			if c, gerr := h.store.Get(ctx, id); gerr == nil && c.Name != "" {
+				name = c.Name
+			}
+			logger.Ctx(ctx).Debug("narrowing refused, category holds documents", log.F("category_id", id.String()),
+				log.F("policies", stranded.Policies), log.F("procedures", stranded.Procedures))
+			return nil, errcodes.Error(ctx, errcodes.CategoryHoldsDocuments(name, stranded.Policies, stranded.Procedures))
+		case errors.Is(err, store.ErrCategoryNotFound):
+			return nil, status.Error(codes.NotFound, "category not found")
+		default:
+			return nil, storeUnavailable(ctx, "set_category_document_types", err)
+		}
+	}
+	if h.auditor != nil {
+		_ = h.auditor.Emit(ctx, audit.Event{
+			Tier: audit.TierAudit, Action: "category.document_types_set",
+			Subject:     "category:" + g.ID.String(),
+			GroupID:     g.ID.String(),
+			ActorUserID: req.GetActorUserId(),
+			Attributes:  map[string]string{"document_types": string(types)},
+		})
+	}
+	return &corev1.SetCategoryDocumentTypesResponse{Category: categoryToProto(g)}, nil
+}
+
+// CountCategoryDocuments handles CategoryService.CountCategoryDocuments.
+func (h *CategoryHandler) CountCategoryDocuments(ctx context.Context, req *corev1.CountCategoryDocumentsRequest) (*corev1.CountCategoryDocumentsResponse, error) {
+	id, err := uuid.Parse(req.GetCategoryId())
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid category_id: %v", err)
+	}
+	c, err := h.store.CountDocuments(ctx, id)
+	if err != nil {
+		if errors.Is(err, store.ErrCategoryNotFound) {
+			return nil, status.Error(codes.NotFound, "category not found")
+		}
+		return nil, storeUnavailable(ctx, "count_category_documents", err)
+	}
+	return &corev1.CountCategoryDocumentsResponse{Policies: toInt32(c.Policies), Procedures: toInt32(c.Procedures)}, nil
 }
 
 // SetGovernance handles CategoryService.SetGovernance.

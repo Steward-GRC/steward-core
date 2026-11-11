@@ -30,6 +30,43 @@ const (
 	CadenceOnDate   ReviewCadence = "on-date"
 )
 
+// CategoryDocumentTypes says which document types a category holds. It is the category's own
+// setting: a child does not inherit it from its parent. The zero value reads as both, so a category
+// stored before the setting existed keeps taking everything.
+type CategoryDocumentTypes string
+
+const (
+	CategoryDocumentTypesBoth       CategoryDocumentTypes = "both"
+	CategoryDocumentTypesPolicies   CategoryDocumentTypes = "policies"
+	CategoryDocumentTypesProcedures CategoryDocumentTypes = "procedures"
+	// CategoryDocumentTypesNone is a container: it holds only child categories.
+	CategoryDocumentTypesNone CategoryDocumentTypes = "none"
+)
+
+// Valid reports whether t is one of the four settings or the zero value.
+func (t CategoryDocumentTypes) Valid() bool {
+	switch t {
+	case "", CategoryDocumentTypesBoth, CategoryDocumentTypesPolicies,
+		CategoryDocumentTypesProcedures, CategoryDocumentTypesNone:
+		return true
+	}
+	return false
+}
+
+// Accepts reports whether a category with this setting takes a document of type dt. An unset dt
+// reads as a policy, like the rest of the domain.
+func (t CategoryDocumentTypes) Accepts(dt DocumentType) bool {
+	switch t {
+	case CategoryDocumentTypesPolicies:
+		return dt == DocumentTypePolicy || dt == ""
+	case CategoryDocumentTypesProcedures:
+		return dt == DocumentTypeProcedure
+	case CategoryDocumentTypesNone:
+		return false
+	}
+	return true
+}
+
 type Category struct {
 	ID                uuid.UUID
 	ParentID          uuid.UUID // uuid.Nil = root
@@ -61,8 +98,10 @@ type Category struct {
 	// OrderIndex is the position among the siblings under the same parent,
 	// counted from zero. Only the relative order counts: a delete leaves a gap.
 	OrderIndex int
-	CreatedAt  time.Time
-	UpdatedAt  time.Time
+	// DocumentTypes says which document types the category takes. Not inherited.
+	DocumentTypes CategoryDocumentTypes
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
 }
 
 func NewCategory(name, slug string, parentID uuid.UUID) (Category, error) {
@@ -74,11 +113,12 @@ func NewCategory(name, slug string, parentID uuid.UUID) (Category, error) {
 	}
 	now := time.Now().UTC()
 	return Category{
-		ID:        uuid.New(),
-		ParentID:  parentID,
-		Name:      name,
-		Slug:      slug,
-		CreatedAt: now,
-		UpdatedAt: now,
+		ID:            uuid.New(),
+		ParentID:      parentID,
+		Name:          name,
+		Slug:          slug,
+		DocumentTypes: CategoryDocumentTypesBoth,
+		CreatedAt:     now,
+		UpdatedAt:     now,
 	}, nil
 }

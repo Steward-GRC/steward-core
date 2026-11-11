@@ -65,6 +65,25 @@ func numberCodeSegment(code *string, slug string) string {
 	return PolicyNumberCode(slug)
 }
 
+// ErrCategoryRefusesType means the category does not accept the document's type, so the document
+// can be neither created in it nor moved into it.
+var ErrCategoryRefusesType = errors.New("category does not accept this document type")
+
+// requireCategoryAccepts locks the category row for share and refuses with ErrCategoryRefusesType
+// when its document types do not take dt. The share lock holds a narrowing of the category (which
+// takes the row FOR UPDATE) back until this transaction ends, so a document cannot land in a
+// category that has just stopped accepting its type.
+func requireCategoryAccepts(ctx context.Context, tx pgx.Tx, categoryID uuid.UUID, dt domain.DocumentType) error {
+	var types string
+	if err := tx.QueryRow(ctx, `SELECT document_types FROM categories WHERE id = $1 FOR SHARE`, categoryID).Scan(&types); err != nil {
+		return fmt.Errorf("category document types: %w", err)
+	}
+	if !domain.CategoryDocumentTypes(types).Accepts(dt) {
+		return fmt.Errorf("category %s holds %s, not %s: %w", categoryID, types, dt, ErrCategoryRefusesType)
+	}
+	return nil
+}
+
 // initialDraftContent matches the policy_versions.content column default.
 const initialDraftContent = "{}"
 
@@ -85,6 +104,11 @@ func (s *PolicyStore) CreatePolicy(ctx context.Context, p domain.Policy) (domain
 		// Pin the default here so the counter key, the number and the row agree.
 		if p.DocumentType == "" {
 			p.DocumentType = domain.DocumentTypePolicy
+		}
+
+		// Before the counter moves, so a refused create burns no number.
+		if err := requireCategoryAccepts(ctx, tx, p.HomeCategoryID, p.DocumentType); err != nil {
+			return fmt.Errorf("PolicyStore.CreatePolicy: %w", err)
 		}
 
 		// Procedures number apart from policies, so the counter is keyed by
@@ -210,6 +234,9 @@ func (s *PolicyStore) SetHomeCategory(ctx context.Context, policyID, targetCateg
 			`SELECT document_type FROM policies WHERE id = $1`, policyID,
 		).Scan(&docType); err != nil {
 			return fmt.Errorf("PolicyStore.SetHomeCategory doc type: %w", err)
+		}
+		if err := requireCategoryAccepts(ctx, tx, targetCategoryID, domain.DocumentType(docType)); err != nil {
+			return fmt.Errorf("PolicyStore.SetHomeCategory: %w", err)
 		}
 
 		var seq int

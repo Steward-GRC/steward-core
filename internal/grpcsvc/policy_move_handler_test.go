@@ -103,6 +103,7 @@ func (m movePolicies) GetPolicy(_ context.Context, id uuid.UUID) (domain.Policy,
 type moveFixture struct {
 	h        *grpcsvc.PolicyHandler
 	ps       *fakePolicyStore
+	gs       *fakeCategoryStore
 	cap      *capturePublisher
 	src, dst uuid.UUID
 	docs     []uuid.UUID // two policies and a procedure in src
@@ -123,8 +124,16 @@ func newMoveFixture(t *testing.T) moveFixture {
 		ps.policies[id] = domain.Policy{ID: id, HomeCategoryID: f.src, DocumentType: dt, Title: fmt.Sprintf("Doc %d", i), Number: fakeNumber(f.src, dt, n)}
 		f.docs = append(f.docs, id)
 	}
+	f.gs = gs
 	f.h = grpcsvc.NewPolicyHandler(movePolicies{ps}, moveCategories{gs}, newFakeTemplateStore(), domain.NoopValidator{}, audit.New(cap))
 	return f
+}
+
+// setTargetTypes sets the accepted document types of the target category.
+func (f moveFixture) setTargetTypes(t domain.CategoryDocumentTypes) {
+	g := f.gs.categories[f.dst]
+	g.DocumentTypes = t
+	f.gs.categories[f.dst] = g
 }
 
 func (f moveFixture) idStrings() []string {
@@ -377,4 +386,41 @@ func TestCallerPolicyAdmitsTheGatewayOnTheBulkMoveMethods(t *testing.T) {
 			t.Fatalf("%s: only the gateway may call it, got %v", m, p[m])
 		}
 	}
+}
+
+// The move asks the target category's own accepted document types, with no gate set by hand.
+func TestMovePoliciesUseTheTargetCategoryAcceptedTypes(t *testing.T) {
+	f := newMoveFixture(t)
+	f.setTargetTypes(domain.CategoryDocumentTypesProcedures)
+
+	resp, err := f.h.PreviewMovePolicies(context.Background(), &corev1.PreviewMovePoliciesRequest{
+		PolicyIds: f.idStrings(), HomeCategoryId: f.dst.String(),
+	})
+	if err != nil {
+		t.Fatalf("PreviewMovePolicies: %v", err)
+	}
+	first, last := resp.GetItems()[0], resp.GetItems()[2]
+	if first.GetNewNumber() != "" || first.GetRefusalCode() != "CATEGORY_REFUSES_TYPE" {
+		t.Fatalf("a policy must be refused by a procedures-only category: %+v", first)
+	}
+	if last.GetRefusal() != "" || last.GetNewNumber() == "" {
+		t.Fatalf("the procedure must get a number: %+v", last)
+	}
+
+	_, err = f.h.MovePolicies(context.Background(), &corev1.MovePoliciesRequest{PolicyIds: f.idStrings(), HomeCategoryId: f.dst.String()})
+	info, ok := apperrgrpc.FromStatus(status.Convert(err))
+	if !ok || info.Symbol != "MOVE_REFUSED" || info.Metadata["reason"] != "CATEGORY_REFUSES_TYPE" {
+		t.Fatalf("want a coded MOVE_REFUSED carrying the reason, got %+v ok=%v err=%v", info, ok, err)
+	}
+	f.unchanged(t)
+}
+
+func TestMovePoliciesIntoAContainerCategoryAreRefused(t *testing.T) {
+	f := newMoveFixture(t)
+	f.setTargetTypes(domain.CategoryDocumentTypesNone)
+	_, err := f.h.MovePolicies(context.Background(), &corev1.MovePoliciesRequest{PolicyIds: f.idStrings()[:1], HomeCategoryId: f.dst.String()})
+	if status.Convert(err).Code() != codes.FailedPrecondition {
+		t.Fatalf("want FailedPrecondition, got %v", err)
+	}
+	f.unchanged(t)
 }

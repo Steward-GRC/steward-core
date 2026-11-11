@@ -26,6 +26,18 @@ enum ReviewCadence {
   REVIEW_CADENCE_ON_DATE = 4;
 }
 
+// CategoryDocumentTypes says which document types a category takes. It is the
+// category's own setting; a child category does not inherit it.
+enum CategoryDocumentTypes {
+  // Read as CATEGORY_DOCUMENT_TYPES_BOTH.
+  CATEGORY_DOCUMENT_TYPES_UNSPECIFIED = 0;
+  CATEGORY_DOCUMENT_TYPES_BOTH = 1;
+  CATEGORY_DOCUMENT_TYPES_POLICIES = 2;
+  CATEGORY_DOCUMENT_TYPES_PROCEDURES = 3;
+  // A container: it holds only child categories.
+  CATEGORY_DOCUMENT_TYPES_NONE = 4;
+}
+
 // Category is one node of the category tree (at most three levels deep).
 // Governance settings inherit down the tree: a field that isn't explicitly set
 // takes the nearest ancestor's value.
@@ -69,6 +81,8 @@ message Category {
   // True when default_template_id is binding: a document in this category, or in one that inherits
   // the template, must use it. Never set without a default_template_id.
   bool default_template_locked = 19;
+  // Which document types the category takes. Never UNSPECIFIED on a read.
+  CategoryDocumentTypes document_types = 20;
 }
 
 message CreateCategoryRequest {
@@ -136,6 +150,33 @@ message RenameCategoryRequest {
 
 message RenameCategoryResponse {
   Category category = 1;
+}
+
+// SetCategoryDocumentTypesRequest sets which document types a category takes.
+// Narrowing it is FailedPrecondition (CATEGORY_HOLDS_DOCUMENTS, with the count
+// and the per-type counts in the ErrorInfo metadata) while live documents of a
+// removed type sit in the category. Widening always passes. UNSPECIFIED is
+// InvalidArgument.
+message SetCategoryDocumentTypesRequest {
+  string id = 1;
+  CategoryDocumentTypes document_types = 2;
+  string actor_user_id = 3;
+}
+
+message SetCategoryDocumentTypesResponse {
+  Category category = 1;
+}
+
+// CountCategoryDocumentsRequest asks how many live documents a category holds.
+message CountCategoryDocumentsRequest {
+  string category_id = 1;
+}
+
+// CountCategoryDocumentsResponse counts the category's own documents, published
+// and draft, retired ones left out; descendants are not included.
+message CountCategoryDocumentsResponse {
+  int32 policies = 1;
+  int32 procedures = 2;
 }
 
 // DeleteCategoryRequest removes a category and its descendants. It is refused
@@ -303,6 +344,11 @@ service CategoryService {
   // ReorderCategories sets the order of one parent's children. It is
   // InvalidArgument when the list is not every child exactly once.
   rpc ReorderCategories(ReorderCategoriesRequest) returns (ReorderCategoriesResponse);
+  // SetCategoryDocumentTypes sets which document types the category takes.
+  rpc SetCategoryDocumentTypes(SetCategoryDocumentTypesRequest) returns (SetCategoryDocumentTypesResponse);
+  // CountCategoryDocuments counts a category's live policies and procedures,
+  // for the check before a narrowing.
+  rpc CountCategoryDocuments(CountCategoryDocumentsRequest) returns (CountCategoryDocumentsResponse);
   rpc SetGovernance(SetGovernanceRequest) returns (SetGovernanceResponse);
   rpc GetEffectiveGovernance(GetEffectiveGovernanceRequest) returns (GetEffectiveGovernanceResponse);
   rpc GetCategoryRuleset(GetCategoryRulesetRequest) returns (GetCategoryRulesetResponse);
