@@ -29,6 +29,7 @@ type policyAppendixBackend interface {
 	Publish(ctx context.Context, id, actor uuid.UUID) (domain.PolicyAppendix, error)
 	Retire(ctx context.Context, id, actor uuid.UUID) (domain.PolicyAppendix, bool, error)
 	Restore(ctx context.Context, id uuid.UUID) (domain.PolicyAppendix, bool, error)
+	ReorderAppendices(ctx context.Context, policyID uuid.UUID, orderedIDs []uuid.UUID) ([]domain.PolicyAppendix, error)
 }
 
 // PolicyAppendixHandler implements corev1.PolicyAppendixServiceServer: the
@@ -114,6 +115,9 @@ func policyAppendixErr(ctx context.Context, op string, err error) error {
 	case errors.Is(err, store.ErrPolicyAppendixNotFound), errors.Is(err, store.ErrAppendixPolicyNotFound):
 		l.Warn("policy appendix op refused: not found", log.F("op", op), log.F("reason", err.Error()))
 		return status.Error(codes.NotFound, err.Error())
+	case errors.Is(err, store.ErrAppendixReorderMismatch):
+		l.Warn("policy appendix op refused: bad order list", log.F("op", op), log.F("reason", err.Error()))
+		return status.Error(codes.InvalidArgument, err.Error())
 	case errors.Is(err, store.ErrAppendixNoDraft), errors.Is(err, store.ErrAppendixRetired):
 		l.Warn("policy appendix op refused: wrong state", log.F("op", op), log.F("reason", err.Error()))
 		return status.Error(codes.FailedPrecondition, err.Error())
@@ -304,4 +308,51 @@ func (h *PolicyAppendixHandler) RestoreAppendix(ctx context.Context, req *corev1
 		l.Debug("restore appendix: already live", log.F("appendix_id", id.String()))
 	}
 	return &corev1.RestoreAppendixResponse{Appendix: policyAppendixToProto(a)}, nil
+}
+
+// ReorderPolicyAppendices handles PolicyAppendixService.ReorderPolicyAppendices.
+// A list that is not every live appendix of the policy exactly once is
+// InvalidArgument and nothing changes. It makes no draft and touches no
+// version row.
+func (h *PolicyAppendixHandler) ReorderPolicyAppendices(ctx context.Context, req *corev1.ReorderPolicyAppendicesRequest) (*corev1.ReorderPolicyAppendicesResponse, error) {
+	l := logger.Ctx(ctx)
+	pid, err := uuid.Parse(req.GetPolicyId())
+	if err != nil {
+		l.Debug("reorder policy appendices refused: bad policy_id")
+		return nil, status.Errorf(codes.InvalidArgument, "invalid policy_id: %v", err)
+	}
+	actor, err := parseAppendixActor(req.GetActorUserId())
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]uuid.UUID, len(req.GetOrderedIds()))
+	for i, s := range req.GetOrderedIds() {
+		id, err := uuid.Parse(s)
+		if err != nil {
+			l.Debug("reorder policy appendices refused: bad ordered id", log.F("policy_id", pid.String()), log.F("index", i))
+			return nil, status.Errorf(codes.InvalidArgument, "ordered_ids[%d]: %v", i, err)
+		}
+		ids[i] = id
+	}
+	l.Debug("reorder policy appendices", log.F("policy_id", pid.String()), log.F("actor", actor.String()), log.F("count", len(ids)))
+	list, err := h.store.ReorderAppendices(ctx, pid, ids)
+	if err != nil {
+		return nil, policyAppendixErr(ctx, "reorder_policy_appendices", err)
+	}
+	l.Info("policy appendices reordered", log.F("policy_id", pid.String()), log.F("count", len(list)))
+	if h.auditor != nil {
+		err := h.auditor.Emit(ctx, audit.Event{
+			Tier: audit.TierAudit, Action: "appendix.reordered", ActorUserID: req.GetActorUserId(),
+			Subject:    "policy:" + pid.String(),
+			Attributes: map[string]string{"policy_id": pid.String(), "appendix_count": strconv.Itoa(len(list))},
+		})
+		if err != nil {
+			l.Error(err, "policy appendix audit failed", log.F("action", "appendix.reordered"), log.F("policy_id", pid.String()))
+		}
+	}
+	out := make([]*corev1.PolicyAppendix, len(list))
+	for i, a := range list {
+		out[i] = policyAppendixToProto(a)
+	}
+	return &corev1.ReorderPolicyAppendicesResponse{Appendices: out}, nil
 }

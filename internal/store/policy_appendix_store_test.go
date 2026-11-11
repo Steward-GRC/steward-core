@@ -9,6 +9,7 @@ import (
 	"sync"
 	"testing"
 
+	postgres "github.com/Bugs5382/go-postgres"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
@@ -25,6 +26,7 @@ func content(text string) string { return `{"text":"` + text + `"}` }
 
 type appendixEnv struct {
 	ctx    context.Context
+	pool   *postgres.DB
 	st     *store.PolicyAppendixStore
 	policy uuid.UUID
 	bob    uuid.UUID
@@ -36,7 +38,7 @@ func newAppendixEnv(t *testing.T) appendixEnv {
 	pool := newTestDB(t)
 	policy, _ := makeVersion(t, store.NewPolicyStore(pool), pool, "draft")
 	return appendixEnv{
-		ctx: context.Background(), st: store.NewPolicyAppendixStore(pool),
+		ctx: context.Background(), pool: pool, st: store.NewPolicyAppendixStore(pool),
 		policy: policy, bob: uuid.New(), alice: uuid.New(),
 	}
 }
@@ -515,4 +517,115 @@ func TestMigration0010_UpDownAndCarry(t *testing.T) {
 	require.False(t, tableExists("policy_owned_appendices"))
 	exec(up) // and up again, from the carried data's source
 	require.True(t, tableExists("policy_appendix_versions"))
+}
+
+func appendixIDs(list []domain.PolicyAppendix) []uuid.UUID {
+	out := make([]uuid.UUID, len(list))
+	for i, a := range list {
+		out[i] = a.ID
+	}
+	return out
+}
+
+// appendices.test.ts "order" / "reorders the appendices and re-letters them".
+func TestPolicyAppendix_ReorderReLetters(t *testing.T) {
+	e := newAppendixEnv(t)
+	ids := threeAppendices(t, e)
+	want := []uuid.UUID{ids[2], ids[1], ids[0]}
+	got, err := e.st.ReorderAppendices(e.ctx, e.policy, want)
+	require.NoError(t, err)
+	require.Equal(t, want, appendixIDs(got))
+	for i, a := range got {
+		require.Equal(t, string(rune('A'+i)), a.Letter)
+		require.Equal(t, i, a.OrderIndex)
+	}
+	require.Equal(t, want, appendixIDs(e.list(t, false)), "the order is stored")
+}
+
+// appendices.test.ts "makes no draft on a reorder, a retire or a restore".
+func TestPolicyAppendix_ReorderMakesNoDraftAndKeepsVersions(t *testing.T) {
+	e := newAppendixEnv(t)
+	ids := threeAppendices(t, e)
+	before := map[uuid.UUID][][2]any{}
+	for _, a := range e.list(t, true) {
+		before[a.ID] = versionNos(a)
+	}
+	_, err := e.st.ReorderAppendices(e.ctx, e.policy, []uuid.UUID{ids[2], ids[0], ids[1]})
+	require.NoError(t, err)
+	for _, a := range e.list(t, true) {
+		require.Nil(t, a.Draft(), "%s has a draft", a.ID)
+		require.Equal(t, before[a.ID], versionNos(a))
+	}
+}
+
+// Core rule behind appendices.test.ts "order": every live appendix exactly once.
+func TestPolicyAppendix_ReorderRefusesABadListAndChangesNothing(t *testing.T) {
+	e := newAppendixEnv(t)
+	ids := threeAppendices(t, e)
+	other := newAppendixEnv(t)
+	foreign := other.create(t, "Foreign")
+	_, _, err := e.st.Retire(e.ctx, ids[1], e.bob)
+	require.NoError(t, err)
+	live := []uuid.UUID{ids[0], ids[2]}
+	cases := map[string][]uuid.UUID{
+		"missing":                        {ids[0]},
+		"empty":                          {},
+		"repeated":                       {ids[0], ids[0]},
+		"unknown":                        {ids[0], uuid.New()},
+		"retired":                        {ids[0], ids[1], ids[2]},
+		"retired in place of a live one": {ids[0], ids[1]},
+		"foreign":                        {ids[0], foreign.ID},
+		"too many":                       {ids[0], ids[2], uuid.New()},
+	}
+	for name, list := range cases {
+		_, err := e.st.ReorderAppendices(e.ctx, e.policy, list)
+		require.ErrorIs(t, err, store.ErrAppendixReorderMismatch, name)
+	}
+	require.Equal(t, live, appendixIDs(e.list(t, false)), "nothing changed")
+	require.Equal(t, []uuid.UUID{foreign.ID}, appendixIDs(other.list(t, false)))
+}
+
+// appendices.test.ts "keeps a retired appendix ..." with an order: a retired
+// appendix keeps no letter and stays out of the order.
+func TestPolicyAppendix_ReorderLeavesRetiredOut(t *testing.T) {
+	e := newAppendixEnv(t)
+	ids := threeAppendices(t, e)
+	_, _, err := e.st.Retire(e.ctx, ids[0], e.bob)
+	require.NoError(t, err)
+	got, err := e.st.ReorderAppendices(e.ctx, e.policy, []uuid.UUID{ids[2], ids[1]})
+	require.NoError(t, err)
+	require.Equal(t, []uuid.UUID{ids[2], ids[1]}, appendixIDs(got))
+	require.Equal(t, "A", got[0].Letter)
+	require.Equal(t, "B", got[1].Letter)
+	all := e.list(t, true)
+	require.Equal(t, ids[0], all[2].ID)
+	require.Equal(t, "", all[2].Letter)
+}
+
+func TestPolicyAppendix_ReorderUnknownPolicyAndNoAppendices(t *testing.T) {
+	e := newAppendixEnv(t)
+	_, err := e.st.ReorderAppendices(e.ctx, uuid.New(), nil)
+	require.ErrorIs(t, err, store.ErrAppendixPolicyNotFound)
+	got, err := e.st.ReorderAppendices(e.ctx, e.policy, nil)
+	require.NoError(t, err)
+	require.Empty(t, got, "a policy with no appendices reorders to nothing")
+}
+
+// Two reorders and a create at once leave one consistent order.
+func TestPolicyAppendix_ReorderIsSerialisedWithOtherWrites(t *testing.T) {
+	e := newAppendixEnv(t)
+	ids := threeAppendices(t, e)
+	var wg sync.WaitGroup
+	for _, order := range [][]uuid.UUID{{ids[2], ids[1], ids[0]}, {ids[1], ids[0], ids[2]}} {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, err := e.st.ReorderAppendices(e.ctx, e.policy, order)
+			require.NoError(t, err)
+		}()
+	}
+	wg.Wait()
+	for i, a := range e.list(t, false) {
+		require.Equal(t, i, a.OrderIndex)
+	}
 }

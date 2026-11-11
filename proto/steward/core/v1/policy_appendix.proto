@@ -140,6 +140,21 @@ message RestoreAppendixResponse {
   PolicyAppendix appendix = 1;
 }
 
+// ReorderPolicyAppendicesRequest sets the order of a policy's live appendices.
+// ordered_ids must hold every live (not retired) appendix of the policy
+// exactly once. Retired appendices keep no place and are not named.
+message ReorderPolicyAppendicesRequest {
+  string policy_id = 1;
+  repeated string ordered_ids = 2;
+  string actor_user_id = 3;
+}
+
+// ReorderPolicyAppendicesResponse is the policy's live appendices in the new
+// order, with their letters. A reorder makes no draft and touches no version.
+message ReorderPolicyAppendicesResponse {
+  repeated PolicyAppendix appendices = 1;
+}
+
 // PolicyAppendixService holds the appendices a policy or procedure owns.
 service PolicyAppendixService {
   rpc ListPolicyAppendices(ListPolicyAppendicesRequest) returns (ListPolicyAppendicesResponse);
@@ -148,4 +163,5 @@ service PolicyAppendixService {
   rpc PublishAppendix(PublishAppendixRequest) returns (PublishAppendixResponse);
   rpc RetireAppendix(RetireAppendixRequest) returns (RetireAppendixResponse);
   rpc RestoreAppendix(RestoreAppendixRequest) returns (RestoreAppendixResponse);
+  rpc ReorderPolicyAppendices(ReorderPolicyAppendicesRequest) returns (ReorderPolicyAppendicesResponse);
 }
