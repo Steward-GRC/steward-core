@@ -728,6 +728,355 @@ func (x *SetAssetSettingsResponse) GetSettings() *AssetSettings {
 	return nil
 }
 
+// AssetDocumentLink says where a stored file is used: the document that holds
+// its url in a draft or published version's content.
+type AssetDocumentLink struct {
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	PolicyId string                 `protobuf:"bytes,1,opt,name=policy_id,json=policyId,proto3" json:"policy_id,omitempty"`
+	// The document's title.
+	Title string `protobuf:"bytes,2,opt,name=title,proto3" json:"title,omitempty"`
+	// "policy" when the link is in the document's own content, "appendix" when
+	// it is in one of the document's appendices. A document appears once per
+	// place.
+	Location      string `protobuf:"bytes,3,opt,name=location,proto3" json:"location,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AssetDocumentLink) Reset() {
+	*x = AssetDocumentLink{}
+	mi := &file_steward_core_v1_asset_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AssetDocumentLink) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AssetDocumentLink) ProtoMessage() {}
+
+func (x *AssetDocumentLink) ProtoReflect() protoreflect.Message {
+	mi := &file_steward_core_v1_asset_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AssetDocumentLink.ProtoReflect.Descriptor instead.
+func (*AssetDocumentLink) Descriptor() ([]byte, []int) {
+	return file_steward_core_v1_asset_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *AssetDocumentLink) GetPolicyId() string {
+	if x != nil {
+		return x.PolicyId
+	}
+	return ""
+}
+
+func (x *AssetDocumentLink) GetTitle() string {
+	if x != nil {
+		return x.Title
+	}
+	return ""
+}
+
+func (x *AssetDocumentLink) GetLocation() string {
+	if x != nil {
+		return x.Location
+	}
+	return ""
+}
+
+// StoredAsset is a stored file with where it is used.
+type StoredAsset struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The file's name, kind, size, stored time and uploader
+	// (created_by_user_id).
+	Asset *Asset `protobuf:"bytes,1,opt,name=asset,proto3" json:"asset,omitempty"`
+	// True when at least one document links to it.
+	Linked        bool                 `protobuf:"varint,2,opt,name=linked,proto3" json:"linked,omitempty"`
+	Documents     []*AssetDocumentLink `protobuf:"bytes,3,rep,name=documents,proto3" json:"documents,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *StoredAsset) Reset() {
+	*x = StoredAsset{}
+	mi := &file_steward_core_v1_asset_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StoredAsset) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StoredAsset) ProtoMessage() {}
+
+func (x *StoredAsset) ProtoReflect() protoreflect.Message {
+	mi := &file_steward_core_v1_asset_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StoredAsset.ProtoReflect.Descriptor instead.
+func (*StoredAsset) Descriptor() ([]byte, []int) {
+	return file_steward_core_v1_asset_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *StoredAsset) GetAsset() *Asset {
+	if x != nil {
+		return x.Asset
+	}
+	return nil
+}
+
+func (x *StoredAsset) GetLinked() bool {
+	if x != nil {
+		return x.Linked
+	}
+	return false
+}
+
+func (x *StoredAsset) GetDocuments() []*AssetDocumentLink {
+	if x != nil {
+		return x.Documents
+	}
+	return nil
+}
+
+// ListAssetsRequest lists the stored editor files. Reporting attachments are
+// a separate store and never appear.
+type ListAssetsRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Only files no document links to.
+	UnlinkedOnly  bool `protobuf:"varint,1,opt,name=unlinked_only,json=unlinkedOnly,proto3" json:"unlinked_only,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListAssetsRequest) Reset() {
+	*x = ListAssetsRequest{}
+	mi := &file_steward_core_v1_asset_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListAssetsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListAssetsRequest) ProtoMessage() {}
+
+func (x *ListAssetsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_steward_core_v1_asset_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListAssetsRequest.ProtoReflect.Descriptor instead.
+func (*ListAssetsRequest) Descriptor() ([]byte, []int) {
+	return file_steward_core_v1_asset_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *ListAssetsRequest) GetUnlinkedOnly() bool {
+	if x != nil {
+		return x.UnlinkedOnly
+	}
+	return false
+}
+
+// ListAssetsResponse is ordered by creation time, newest first.
+type ListAssetsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Assets        []*StoredAsset         `protobuf:"bytes,1,rep,name=assets,proto3" json:"assets,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListAssetsResponse) Reset() {
+	*x = ListAssetsResponse{}
+	mi := &file_steward_core_v1_asset_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListAssetsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListAssetsResponse) ProtoMessage() {}
+
+func (x *ListAssetsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_steward_core_v1_asset_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListAssetsResponse.ProtoReflect.Descriptor instead.
+func (*ListAssetsResponse) Descriptor() ([]byte, []int) {
+	return file_steward_core_v1_asset_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *ListAssetsResponse) GetAssets() []*StoredAsset {
+	if x != nil {
+		return x.Assets
+	}
+	return nil
+}
+
+// DeleteAssetRequest deletes a stored file at once, even when a document still
+// links to it. The gateway allows only an admin to call this.
+type DeleteAssetRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Id    string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	// The admin, recorded on the audit entry.
+	ActorUserId   string `protobuf:"bytes,2,opt,name=actor_user_id,json=actorUserId,proto3" json:"actor_user_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteAssetRequest) Reset() {
+	*x = DeleteAssetRequest{}
+	mi := &file_steward_core_v1_asset_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteAssetRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteAssetRequest) ProtoMessage() {}
+
+func (x *DeleteAssetRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_steward_core_v1_asset_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteAssetRequest.ProtoReflect.Descriptor instead.
+func (*DeleteAssetRequest) Descriptor() ([]byte, []int) {
+	return file_steward_core_v1_asset_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *DeleteAssetRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *DeleteAssetRequest) GetActorUserId() string {
+	if x != nil {
+		return x.ActorUserId
+	}
+	return ""
+}
+
+// DeleteAssetResponse echoes what was deleted. removed_from lists the
+// documents whose content had the file or image card taken out. No version is
+// created and nothing is added to any version history; the only record is the
+// asset.deleted audit entry.
+type DeleteAssetResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Filename      string                 `protobuf:"bytes,2,opt,name=filename,proto3" json:"filename,omitempty"`
+	Kind          string                 `protobuf:"bytes,3,opt,name=kind,proto3" json:"kind,omitempty"`
+	RemovedFrom   []*AssetDocumentLink   `protobuf:"bytes,4,rep,name=removed_from,json=removedFrom,proto3" json:"removed_from,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteAssetResponse) Reset() {
+	*x = DeleteAssetResponse{}
+	mi := &file_steward_core_v1_asset_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteAssetResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteAssetResponse) ProtoMessage() {}
+
+func (x *DeleteAssetResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_steward_core_v1_asset_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteAssetResponse.ProtoReflect.Descriptor instead.
+func (*DeleteAssetResponse) Descriptor() ([]byte, []int) {
+	return file_steward_core_v1_asset_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *DeleteAssetResponse) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *DeleteAssetResponse) GetFilename() string {
+	if x != nil {
+		return x.Filename
+	}
+	return ""
+}
+
+func (x *DeleteAssetResponse) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+func (x *DeleteAssetResponse) GetRemovedFrom() []*AssetDocumentLink {
+	if x != nil {
+		return x.RemovedFrom
+	}
+	return nil
+}
+
 var File_steward_core_v1_asset_proto protoreflect.FileDescriptor
 
 const file_steward_core_v1_asset_proto_rawDesc = "" +
@@ -785,12 +1134,35 @@ const file_steward_core_v1_asset_proto_rawDesc = "" +
 	"\rallowed_kinds\x18\x01 \x03(\tR\fallowedKinds\x12\"\n" +
 	"\ractor_user_id\x18\x02 \x01(\tR\vactorUserId\"V\n" +
 	"\x18SetAssetSettingsResponse\x12:\n" +
-	"\bsettings\x18\x01 \x01(\v2\x1e.steward.core.v1.AssetSettingsR\bsettings2\x8b\x03\n" +
+	"\bsettings\x18\x01 \x01(\v2\x1e.steward.core.v1.AssetSettingsR\bsettings\"b\n" +
+	"\x11AssetDocumentLink\x12\x1b\n" +
+	"\tpolicy_id\x18\x01 \x01(\tR\bpolicyId\x12\x14\n" +
+	"\x05title\x18\x02 \x01(\tR\x05title\x12\x1a\n" +
+	"\blocation\x18\x03 \x01(\tR\blocation\"\x95\x01\n" +
+	"\vStoredAsset\x12,\n" +
+	"\x05asset\x18\x01 \x01(\v2\x16.steward.core.v1.AssetR\x05asset\x12\x16\n" +
+	"\x06linked\x18\x02 \x01(\bR\x06linked\x12@\n" +
+	"\tdocuments\x18\x03 \x03(\v2\".steward.core.v1.AssetDocumentLinkR\tdocuments\"8\n" +
+	"\x11ListAssetsRequest\x12#\n" +
+	"\runlinked_only\x18\x01 \x01(\bR\funlinkedOnly\"J\n" +
+	"\x12ListAssetsResponse\x124\n" +
+	"\x06assets\x18\x01 \x03(\v2\x1c.steward.core.v1.StoredAssetR\x06assets\"H\n" +
+	"\x12DeleteAssetRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\"\n" +
+	"\ractor_user_id\x18\x02 \x01(\tR\vactorUserId\"\x9c\x01\n" +
+	"\x13DeleteAssetResponse\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1a\n" +
+	"\bfilename\x18\x02 \x01(\tR\bfilename\x12\x12\n" +
+	"\x04kind\x18\x03 \x01(\tR\x04kind\x12E\n" +
+	"\fremoved_from\x18\x04 \x03(\v2\".steward.core.v1.AssetDocumentLinkR\vremovedFrom2\xbc\x04\n" +
 	"\fAssetService\x12X\n" +
 	"\vUploadAsset\x12#.steward.core.v1.UploadAssetRequest\x1a$.steward.core.v1.UploadAssetResponse\x12O\n" +
 	"\bGetAsset\x12 .steward.core.v1.GetAssetRequest\x1a!.steward.core.v1.GetAssetResponse\x12g\n" +
 	"\x10GetAssetSettings\x12(.steward.core.v1.GetAssetSettingsRequest\x1a).steward.core.v1.GetAssetSettingsResponse\x12g\n" +
-	"\x10SetAssetSettings\x12(.steward.core.v1.SetAssetSettingsRequest\x1a).steward.core.v1.SetAssetSettingsResponseBCZAgithub.com/Steward-GRC/steward-core/gen/go/steward/core/v1;corev1b\x06proto3"
+	"\x10SetAssetSettings\x12(.steward.core.v1.SetAssetSettingsRequest\x1a).steward.core.v1.SetAssetSettingsResponse\x12U\n" +
+	"\n" +
+	"ListAssets\x12\".steward.core.v1.ListAssetsRequest\x1a#.steward.core.v1.ListAssetsResponse\x12X\n" +
+	"\vDeleteAsset\x12#.steward.core.v1.DeleteAssetRequest\x1a$.steward.core.v1.DeleteAssetResponseBCZAgithub.com/Steward-GRC/steward-core/gen/go/steward/core/v1;corev1b\x06proto3"
 
 var (
 	file_steward_core_v1_asset_proto_rawDescOnce sync.Once
@@ -804,7 +1176,7 @@ func file_steward_core_v1_asset_proto_rawDescGZIP() []byte {
 	return file_steward_core_v1_asset_proto_rawDescData
 }
 
-var file_steward_core_v1_asset_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
+var file_steward_core_v1_asset_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
 var file_steward_core_v1_asset_proto_goTypes = []any{
 	(*Asset)(nil),                    // 0: steward.core.v1.Asset
 	(*UploadAssetRequest)(nil),       // 1: steward.core.v1.UploadAssetRequest
@@ -817,25 +1189,39 @@ var file_steward_core_v1_asset_proto_goTypes = []any{
 	(*GetAssetSettingsResponse)(nil), // 8: steward.core.v1.GetAssetSettingsResponse
 	(*SetAssetSettingsRequest)(nil),  // 9: steward.core.v1.SetAssetSettingsRequest
 	(*SetAssetSettingsResponse)(nil), // 10: steward.core.v1.SetAssetSettingsResponse
+	(*AssetDocumentLink)(nil),        // 11: steward.core.v1.AssetDocumentLink
+	(*StoredAsset)(nil),              // 12: steward.core.v1.StoredAsset
+	(*ListAssetsRequest)(nil),        // 13: steward.core.v1.ListAssetsRequest
+	(*ListAssetsResponse)(nil),       // 14: steward.core.v1.ListAssetsResponse
+	(*DeleteAssetRequest)(nil),       // 15: steward.core.v1.DeleteAssetRequest
+	(*DeleteAssetResponse)(nil),      // 16: steward.core.v1.DeleteAssetResponse
 }
 var file_steward_core_v1_asset_proto_depIdxs = []int32{
 	0,  // 0: steward.core.v1.UploadAssetResponse.asset:type_name -> steward.core.v1.Asset
 	5,  // 1: steward.core.v1.AssetSettings.kinds:type_name -> steward.core.v1.AssetKindSetting
 	7,  // 2: steward.core.v1.GetAssetSettingsResponse.settings:type_name -> steward.core.v1.AssetSettings
 	7,  // 3: steward.core.v1.SetAssetSettingsResponse.settings:type_name -> steward.core.v1.AssetSettings
-	1,  // 4: steward.core.v1.AssetService.UploadAsset:input_type -> steward.core.v1.UploadAssetRequest
-	3,  // 5: steward.core.v1.AssetService.GetAsset:input_type -> steward.core.v1.GetAssetRequest
-	6,  // 6: steward.core.v1.AssetService.GetAssetSettings:input_type -> steward.core.v1.GetAssetSettingsRequest
-	9,  // 7: steward.core.v1.AssetService.SetAssetSettings:input_type -> steward.core.v1.SetAssetSettingsRequest
-	2,  // 8: steward.core.v1.AssetService.UploadAsset:output_type -> steward.core.v1.UploadAssetResponse
-	4,  // 9: steward.core.v1.AssetService.GetAsset:output_type -> steward.core.v1.GetAssetResponse
-	8,  // 10: steward.core.v1.AssetService.GetAssetSettings:output_type -> steward.core.v1.GetAssetSettingsResponse
-	10, // 11: steward.core.v1.AssetService.SetAssetSettings:output_type -> steward.core.v1.SetAssetSettingsResponse
-	8,  // [8:12] is the sub-list for method output_type
-	4,  // [4:8] is the sub-list for method input_type
-	4,  // [4:4] is the sub-list for extension type_name
-	4,  // [4:4] is the sub-list for extension extendee
-	0,  // [0:4] is the sub-list for field type_name
+	0,  // 4: steward.core.v1.StoredAsset.asset:type_name -> steward.core.v1.Asset
+	11, // 5: steward.core.v1.StoredAsset.documents:type_name -> steward.core.v1.AssetDocumentLink
+	12, // 6: steward.core.v1.ListAssetsResponse.assets:type_name -> steward.core.v1.StoredAsset
+	11, // 7: steward.core.v1.DeleteAssetResponse.removed_from:type_name -> steward.core.v1.AssetDocumentLink
+	1,  // 8: steward.core.v1.AssetService.UploadAsset:input_type -> steward.core.v1.UploadAssetRequest
+	3,  // 9: steward.core.v1.AssetService.GetAsset:input_type -> steward.core.v1.GetAssetRequest
+	6,  // 10: steward.core.v1.AssetService.GetAssetSettings:input_type -> steward.core.v1.GetAssetSettingsRequest
+	9,  // 11: steward.core.v1.AssetService.SetAssetSettings:input_type -> steward.core.v1.SetAssetSettingsRequest
+	13, // 12: steward.core.v1.AssetService.ListAssets:input_type -> steward.core.v1.ListAssetsRequest
+	15, // 13: steward.core.v1.AssetService.DeleteAsset:input_type -> steward.core.v1.DeleteAssetRequest
+	2,  // 14: steward.core.v1.AssetService.UploadAsset:output_type -> steward.core.v1.UploadAssetResponse
+	4,  // 15: steward.core.v1.AssetService.GetAsset:output_type -> steward.core.v1.GetAssetResponse
+	8,  // 16: steward.core.v1.AssetService.GetAssetSettings:output_type -> steward.core.v1.GetAssetSettingsResponse
+	10, // 17: steward.core.v1.AssetService.SetAssetSettings:output_type -> steward.core.v1.SetAssetSettingsResponse
+	14, // 18: steward.core.v1.AssetService.ListAssets:output_type -> steward.core.v1.ListAssetsResponse
+	16, // 19: steward.core.v1.AssetService.DeleteAsset:output_type -> steward.core.v1.DeleteAssetResponse
+	14, // [14:20] is the sub-list for method output_type
+	8,  // [8:14] is the sub-list for method input_type
+	8,  // [8:8] is the sub-list for extension type_name
+	8,  // [8:8] is the sub-list for extension extendee
+	0,  // [0:8] is the sub-list for field type_name
 }
 
 func init() { file_steward_core_v1_asset_proto_init() }
@@ -849,7 +1235,7 @@ func file_steward_core_v1_asset_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_steward_core_v1_asset_proto_rawDesc), len(file_steward_core_v1_asset_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   11,
+			NumMessages:   17,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
