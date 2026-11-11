@@ -79,7 +79,7 @@ message Category {
   // relative order counts.
   int32 order_index = 18;
   // Which document types the category takes. Never UNSPECIFIED on a read.
-  CategoryDocumentTypes document_types = 19;
+  CategoryDocumentTypes document_types = 20;
 }
 
 message CreateCategoryRequest {

@@ -340,7 +340,7 @@ type Category struct {
 	// relative order counts.
 	OrderIndex int32 `protobuf:"varint,18,opt,name=order_index,json=orderIndex,proto3" json:"order_index,omitempty"`
 	// Which document types the category takes. Never UNSPECIFIED on a read.
-	DocumentTypes CategoryDocumentTypes `protobuf:"varint,19,opt,name=document_types,json=documentTypes,proto3,enum=steward.core.v1.CategoryDocumentTypes" json:"document_types,omitempty"`
+	DocumentTypes CategoryDocumentTypes `protobuf:"varint,20,opt,name=document_types,json=documentTypes,proto3,enum=steward.core.v1.CategoryDocumentTypes" json:"document_types,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2323,7 +2323,7 @@ const file_steward_core_v1_category_proto_rawDesc = "" +
 	"\x10ack_everyone_set\x18\x11 \x01(\bR\x0eackEveryoneSet\x12\x1f\n" +
 	"\vorder_index\x18\x12 \x01(\x05R\n" +
 	"orderIndex\x12M\n" +
-	"\x0edocument_types\x18\x13 \x01(\x0e2&.steward.core.v1.CategoryDocumentTypesR\rdocumentTypes\"\x80\x01\n" +
+	"\x0edocument_types\x18\x14 \x01(\x0e2&.steward.core.v1.CategoryDocumentTypesR\rdocumentTypes\"\x80\x01\n" +
 	"\x15CreateCategoryRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
 	"\x04slug\x18\x02 \x01(\tR\x04slug\x12\x1b\n" +
