@@ -5,12 +5,14 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
 	"strings"
 	"time"
 
+	log "github.com/Bugs5382/go-log"
 	postgres "github.com/Bugs5382/go-postgres"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -1022,26 +1024,86 @@ func (s *PolicyStore) SetAck(ctx context.Context, policyID uuid.UUID, ack *domai
 
 // SetTemplate sets the policy's own template: templateNone means freeform
 // (the id is stored as NULL), uuid.Nil inherits from the category chain.
+// Going freeform also blanks the working draft when the author has not
+// written in it yet (see blankUntouchedDraft); a draft with the author's text
+// is left alone.
 func (s *PolicyStore) SetTemplate(ctx context.Context, policyID, templateID uuid.UUID, templateNone bool) (domain.Policy, error) {
 	var templatePtr *uuid.UUID
 	if templateID != uuid.Nil && !templateNone {
 		templatePtr = &templateID
 	}
-	tag, err := s.db.Querier().Exec(ctx,
-		`UPDATE policies
-		    SET template_id   = $2,
-		        template_none = $3,
-		        updated_at    = now()
-		  WHERE id = $1`,
-		policyID, templatePtr, templateNone,
-	)
+	err := s.db.RunInTx(ctx, func(tx pgx.Tx) error {
+		tag, err := tx.Exec(ctx,
+			`UPDATE policies
+			    SET template_id   = $2,
+			        template_none = $3,
+			        updated_at    = now()
+			  WHERE id = $1`,
+			policyID, templatePtr, templateNone,
+		)
+		if err != nil {
+			return fmt.Errorf("PolicyStore.SetTemplate: %w", err)
+		}
+		if tag.RowsAffected() == 0 {
+			return fmt.Errorf("PolicyStore.SetTemplate %s: %w", policyID, pgx.ErrNoRows)
+		}
+		if templateNone {
+			return blankUntouchedDraft(ctx, tx, policyID)
+		}
+		return nil
+	})
 	if err != nil {
-		return domain.Policy{}, fmt.Errorf("PolicyStore.SetTemplate: %w", err)
-	}
-	if tag.RowsAffected() == 0 {
-		return domain.Policy{}, fmt.Errorf("PolicyStore.SetTemplate %s: %w", policyID, pgx.ErrNoRows)
+		return domain.Policy{}, err
 	}
 	return s.GetPolicy(ctx, policyID)
+}
+
+// blankUntouchedDraft makes the policy's draft blank and freeform again when it still holds only what
+// it started with (domain.DraftUntouched): no text, or only the pinned template's section titles. A
+// draft in review, or one with the author's text, is not touched.
+func blankUntouchedDraft(ctx context.Context, tx pgx.Tx, policyID uuid.UUID) error {
+	var (
+		draftID   uuid.UUID
+		pinned    *uuid.UUID
+		content   string
+		sectionsJ []byte
+	)
+	err := tx.QueryRow(ctx,
+		`SELECT pv.id, pv.template_version_id, pv.content::text, tv.sections
+		   FROM policy_versions pv
+		   LEFT JOIN template_versions tv ON tv.id = pv.template_version_id
+		  WHERE pv.policy_id = $1 AND pv.status = 'draft'
+		  FOR UPDATE OF pv`, policyID,
+	).Scan(&draftID, &pinned, &content, &sectionsJ)
+	if errors.Is(err, pgx.ErrNoRows) {
+		logger.Ctx(ctx).Debug("policy has no working draft to blank", log.F("policy_id", policyID.String()))
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("PolicyStore.SetTemplate read draft: %w", err)
+	}
+	var titles []string
+	if len(sectionsJ) > 0 {
+		var sections []struct{ Title string }
+		if err := json.Unmarshal(sectionsJ, &sections); err != nil {
+			return fmt.Errorf("PolicyStore.SetTemplate unmarshal sections: %w", err)
+		}
+		for _, sec := range sections {
+			titles = append(titles, sec.Title)
+		}
+	}
+	if !domain.DraftUntouched(content, titles) {
+		logger.Ctx(ctx).Debug("draft carries the author's text, left alone", log.F("policy_id", policyID.String()))
+		return nil
+	}
+	if _, err := tx.Exec(ctx,
+		`UPDATE policy_versions SET template_version_id = NULL, content = $2::jsonb WHERE id = $1`,
+		draftID, initialDraftContent,
+	); err != nil {
+		return fmt.Errorf("PolicyStore.SetTemplate blank draft: %w", err)
+	}
+	logger.Ctx(ctx).Info("untouched draft blanked for a freeform policy", log.F("policy_id", policyID.String()))
+	return nil
 }
 
 // ListAllPolicies returns every policy, unordered, for the obligation

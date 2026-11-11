@@ -20,10 +20,12 @@ const Domain = "core"
 
 // The core service's codes.
 const (
-	CodeInternal             = 4000
-	CodeStoreUnavailable     = 4001
-	CodeCategoryNotDeletable = 4002
-	CodeInvalidCategoryRule  = 4003
+	CodeInternal                 = 4000
+	CodeStoreUnavailable         = 4001
+	CodeCategoryNotDeletable     = 4002
+	CodeInvalidCategoryRule      = 4003
+	CodeCategoryTemplateLocked   = 4004
+	CodeTemplateLockNeedsDefault = 4005
 )
 
 // Entries returns the registry entries.
@@ -39,6 +41,12 @@ func Entries() []apperr.Entry {
 		{Code: CodeInvalidCategoryRule, Symbol: "INVALID_CATEGORY_RULE", Category: apperr.CategoryInvalid,
 			Title: "category rules", Cause: "a category ruleset failed the steward-authz validation",
 			UserSafe: true, Message: "Access rule {rule} in {category} is not valid ({problem})."},
+		{Code: CodeCategoryTemplateLocked, Symbol: "CATEGORY_TEMPLATE_LOCKED", Category: apperr.CategoryFailedPrecondition,
+			Title: "category template lock", Cause: "a document was created or changed to a template other than the one its category locks",
+			UserSafe: true, Message: "This category requires the {template} template."},
+		{Code: CodeTemplateLockNeedsDefault, Symbol: "TEMPLATE_LOCK_NEEDS_DEFAULT", Category: apperr.CategoryFailedPrecondition,
+			Title: "category template lock", Cause: "a lock was set on a category that names no default template",
+			UserSafe: true, Message: "Choose a default template for {category} before locking it."},
 	}
 }
 
@@ -93,6 +101,23 @@ func CategoryNotDeletable(name string, cause error) error {
 // rule and problem metadata it attached are kept.
 func InvalidCategoryRule(cause error) error {
 	return apperr.Coded(CodeInvalidCategoryRule, cause)
+}
+
+var (
+	errTemplateLocked       = errors.New("core: the category locks its default template")
+	errTemplateLockNoTplSet = errors.New("core: the category names no default template to lock")
+)
+
+// CategoryTemplateLocked codes a refused template choice. template is the resolved name of the
+// locked template, never its id, so the message can be shown as it is.
+func CategoryTemplateLocked(template string) error {
+	return apperr.WithMeta(apperr.Coded(CodeCategoryTemplateLocked, errTemplateLocked), apperr.Meta("template", template))
+}
+
+// TemplateLockNeedsDefault codes a lock set on a category with no default template. category is the
+// resolved category name.
+func TemplateLockNeedsDefault(category string) error {
+	return apperr.WithMeta(apperr.Coded(CodeTemplateLockNeedsDefault, errTemplateLockNoTplSet), apperr.Meta("category", category))
 }
 
 type logSink struct{ l log.Logger }

@@ -86,3 +86,26 @@ func TestErrorCodesDocIsCurrent(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, want, string(got), "docs/error-codes.md is stale; run UPDATE_DOCS=1 go test ./internal/errcodes")
 }
+
+func TestCategoryTemplateLockedRoundTrip(t *testing.T) {
+	st := status.Convert(errcodes.Error(context.Background(), errcodes.CategoryTemplateLocked("Standard Policy")))
+	require.Equal(t, codes.FailedPrecondition, st.Code())
+	require.Equal(t, "This category requires the Standard Policy template.", st.Message())
+
+	info, ok := apperrgrpc.FromStatus(st)
+	require.True(t, ok, "status must carry ErrorInfo")
+	require.Equal(t, "CATEGORY_TEMPLATE_LOCKED", info.Symbol)
+	require.Equal(t, 4004, info.Code)
+	require.Equal(t, "Standard Policy", info.Metadata["template"])
+}
+
+func TestTemplateLockNeedsDefaultRoundTrip(t *testing.T) {
+	st := status.Convert(errcodes.Error(context.Background(), errcodes.TemplateLockNeedsDefault("Travel")))
+	require.Equal(t, codes.FailedPrecondition, st.Code())
+	require.Equal(t, "Choose a default template for Travel before locking it.", st.Message())
+
+	info, _ := apperrgrpc.FromStatus(st)
+	require.Equal(t, "TEMPLATE_LOCK_NEEDS_DEFAULT", info.Symbol)
+	require.Equal(t, 4005, info.Code)
+	require.Equal(t, "Travel", info.Metadata["category"])
+}

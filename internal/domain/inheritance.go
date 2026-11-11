@@ -146,3 +146,36 @@ func EffectiveAckEveryone(chain []Category) *bool {
 	}
 	return nil
 }
+
+// LockedTemplate returns the template a category chain locks authors to, or uuid.Nil when nothing
+// binds. The nearest category that names a default template (or freeform) provides it, and it binds
+// only when that category is locked; a child with its own template overrides a lock above it, and a
+// freeform default stops one. chain is leaf-first.
+func LockedTemplate(chain []Category) uuid.UUID {
+	for _, g := range chain {
+		if g.DefaultTemplateNone {
+			return uuid.Nil
+		}
+		if g.DefaultTemplateID != uuid.Nil {
+			if g.DefaultTemplateLocked {
+				return g.DefaultTemplateID
+			}
+			return uuid.Nil
+		}
+	}
+	return uuid.Nil
+}
+
+// TemplateLockViolation returns the locked template id when asking for requested (or freeform, with
+// none) breaks the lock on chain, else uuid.Nil. Asking for neither inherits the category's
+// template, which is the locked one, so it never violates.
+func TemplateLockViolation(chain []Category, requested uuid.UUID, none bool) uuid.UUID {
+	locked := LockedTemplate(chain)
+	if locked == uuid.Nil {
+		return uuid.Nil
+	}
+	if none || (requested != uuid.Nil && requested != locked) {
+		return locked
+	}
+	return uuid.Nil
+}
