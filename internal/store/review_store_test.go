@@ -239,6 +239,205 @@ func TestReviewTablesRefuseBlankTextAndBadOccurrence(t *testing.T) {
 	require.Error(t, err, "occurrence below 1")
 }
 
+// suggestedThread starts a reviewer thread that carries a suggestion.
+func suggestedThread(t *testing.T, s *store.ReviewStore, vid, charlie uuid.UUID, text string) domain.ReviewThread {
+	t.Helper()
+	th := newThread(t, vid, charlie, charlie, domain.ReviewSideReviewer, "Shorter?")
+	th, err := th.WithSuggestion(domain.DefaultReviewLimits, domain.ReviewSideReviewer, charlie, text)
+	require.NoError(t, err)
+	got, err := s.CreateThread(context.Background(), th)
+	require.NoError(t, err)
+	return got
+}
+
+// mock: starting a suggestion / opens it on the author's turn, comes back on the version's thread list
+func TestReviewStoreKeepsASuggestionWithItsThread(t *testing.T) {
+	pool := newTestDB(t)
+	s := store.NewReviewStore(pool)
+	ctx := context.Background()
+	vid, _ := reviewVersion(t, pool)
+	charlie := uuid.New()
+
+	got := suggestedThread(t, s, vid, charlie, "six years")
+	require.NotNil(t, got.Suggestion)
+	require.Equal(t, "six years", got.Suggestion.Text())
+	require.Equal(t, domain.ReviewSideAuthor, got.Suggestion.Turn())
+	require.True(t, got.Suggestion.Open())
+	require.Len(t, got.Suggestion.Rounds, 1)
+	r := got.Suggestion.Rounds[0]
+	require.Equal(t, 1, r.Seq)
+	require.Equal(t, domain.ReviewSideReviewer, r.Side)
+	require.Equal(t, charlie, r.UserID)
+	require.False(t, r.CreatedAt.IsZero())
+
+	plain, err := s.CreateThread(ctx, newThread(t, vid, charlie, charlie, domain.ReviewSideReviewer, "plain"))
+	require.NoError(t, err)
+	require.Nil(t, plain.Suggestion)
+
+	list, err := s.ListThreads(ctx, vid, uuid.Nil)
+	require.NoError(t, err)
+	require.Len(t, list, 2)
+	require.NotNil(t, list[0].Suggestion)
+	require.Equal(t, "six years", list[0].Suggestion.Text())
+	require.Nil(t, list[1].Suggestion)
+}
+
+// mock: countering / lets the side whose turn it is counter, and flips the turn
+func TestReviewStoreAppendRoundKeepsEveryRoundInOrder(t *testing.T) {
+	pool := newTestDB(t)
+	s := store.NewReviewStore(pool)
+	ctx := context.Background()
+	vid, _ := reviewVersion(t, pool)
+	charlie, bob := uuid.New(), uuid.New()
+	th := suggestedThread(t, s, vid, charlie, "six years")
+
+	r, err := th.Counter(domain.DefaultReviewLimits, domain.ReviewSideAuthor, bob, "five years")
+	require.NoError(t, err)
+	got, err := s.AppendRound(ctx, th.ID, r)
+	require.NoError(t, err)
+	require.Equal(t, "five years", got.Suggestion.Text())
+	require.Equal(t, domain.ReviewSideReviewer, got.Suggestion.Turn())
+	require.Len(t, got.Suggestion.Rounds, 2)
+	require.Equal(t, 2, got.Suggestion.Rounds[1].Seq)
+	require.Equal(t, bob, got.Suggestion.Rounds[1].UserID)
+	require.Equal(t, "six years", got.Suggestion.Rounds[0].Text)
+
+	r, err = got.Counter(domain.DefaultReviewLimits, domain.ReviewSideReviewer, charlie, "four years")
+	require.NoError(t, err)
+	got, err = s.AppendRound(ctx, th.ID, r)
+	require.NoError(t, err)
+	require.Len(t, got.Suggestion.Rounds, 3)
+	require.Equal(t, domain.ReviewSideAuthor, got.Suggestion.Turn())
+}
+
+// A counter decided on an older read loses to the one that landed first.
+func TestReviewStoreAppendRoundRefusesAStaleRound(t *testing.T) {
+	pool := newTestDB(t)
+	s := store.NewReviewStore(pool)
+	ctx := context.Background()
+	vid, _ := reviewVersion(t, pool)
+	charlie, bob := uuid.New(), uuid.New()
+	th := suggestedThread(t, s, vid, charlie, "six years")
+
+	r, err := th.Counter(domain.DefaultReviewLimits, domain.ReviewSideAuthor, bob, "five years")
+	require.NoError(t, err)
+	_, err = s.AppendRound(ctx, th.ID, r)
+	require.NoError(t, err)
+	_, err = s.AppendRound(ctx, th.ID, r)
+	require.ErrorIs(t, err, store.ErrSuggestionChanged)
+}
+
+func TestReviewStoreAppendRoundOnAPlainThreadOrUnknownThread(t *testing.T) {
+	pool := newTestDB(t)
+	s := store.NewReviewStore(pool)
+	ctx := context.Background()
+	vid, _ := reviewVersion(t, pool)
+	a := uuid.New()
+	plain, err := s.CreateThread(ctx, newThread(t, vid, a, a, domain.ReviewSideReviewer, "plain"))
+	require.NoError(t, err)
+	round := domain.SuggestionRound{Seq: 1, Side: domain.ReviewSideAuthor, UserID: a, Text: "x"}
+	_, err = s.AppendRound(ctx, plain.ID, round)
+	require.ErrorIs(t, err, store.ErrSuggestionMissing)
+	_, err = s.AppendRound(ctx, uuid.New(), round)
+	require.ErrorIs(t, err, store.ErrReviewThreadNotFound)
+}
+
+// mock: closing / lets the author change it, which resolves the thread and records the text
+func TestReviewStoreCloseSuggestionRecordsOutcomeAndResolves(t *testing.T) {
+	pool := newTestDB(t)
+	s := store.NewReviewStore(pool)
+	ctx := context.Background()
+	vid, _ := reviewVersion(t, pool)
+	charlie, bob := uuid.New(), uuid.New()
+	th := suggestedThread(t, s, vid, charlie, "six years")
+
+	c, err := th.CloseSuggestion(domain.DefaultReviewLimits, domain.ReviewSideAuthor, bob, domain.SuggestionChanged, "")
+	require.NoError(t, err)
+	got, err := s.CloseSuggestion(ctx, th.ID, c)
+	require.NoError(t, err)
+	require.True(t, got.Resolved)
+	require.False(t, got.Suggestion.Open())
+	require.Equal(t, domain.SuggestionChanged, got.Suggestion.Outcome)
+	require.Equal(t, "six years", got.Suggestion.ClosedText)
+	require.Equal(t, bob, got.Suggestion.ClosedBy)
+	require.False(t, got.Suggestion.ClosedAt.IsZero())
+	require.Empty(t, got.Suggestion.Reason)
+
+	// the outcome survives the thread being reopened
+	reopened, err := s.SetResolved(ctx, th.ID, false)
+	require.NoError(t, err)
+	require.False(t, reopened.Resolved)
+	require.Equal(t, domain.SuggestionChanged, reopened.Suggestion.Outcome)
+}
+
+// mock: closing / needs a reason for not agreed, and records it
+func TestReviewStoreCloseSuggestionKeepsTheReason(t *testing.T) {
+	pool := newTestDB(t)
+	s := store.NewReviewStore(pool)
+	ctx := context.Background()
+	vid, _ := reviewVersion(t, pool)
+	charlie, bob := uuid.New(), uuid.New()
+	th := suggestedThread(t, s, vid, charlie, "six years")
+	c, err := th.CloseSuggestion(domain.DefaultReviewLimits, domain.ReviewSideAuthor, bob, domain.SuggestionNotAgreed, "Law says seven.")
+	require.NoError(t, err)
+	got, err := s.CloseSuggestion(ctx, th.ID, c)
+	require.NoError(t, err)
+	require.Equal(t, "Law says seven.", got.Suggestion.Reason)
+	require.Equal(t, domain.SuggestionNotAgreed, got.Suggestion.Outcome)
+}
+
+// mock: closing / refuses to close twice, or to counter a closed suggestion
+func TestReviewStoreRefusesASecondCloseAndACounterAfterClose(t *testing.T) {
+	pool := newTestDB(t)
+	s := store.NewReviewStore(pool)
+	ctx := context.Background()
+	vid, _ := reviewVersion(t, pool)
+	charlie, bob := uuid.New(), uuid.New()
+	th := suggestedThread(t, s, vid, charlie, "six years")
+	r, err := th.Counter(domain.DefaultReviewLimits, domain.ReviewSideAuthor, bob, "five years")
+	require.NoError(t, err)
+	c, err := th.CloseSuggestion(domain.DefaultReviewLimits, domain.ReviewSideAuthor, bob, domain.SuggestionRemoved, "")
+	require.NoError(t, err)
+	_, err = s.CloseSuggestion(ctx, th.ID, c)
+	require.NoError(t, err)
+
+	_, err = s.CloseSuggestion(ctx, th.ID, c)
+	require.ErrorIs(t, err, store.ErrSuggestionEnded)
+	_, err = s.AppendRound(ctx, th.ID, r)
+	require.ErrorIs(t, err, store.ErrSuggestionEnded)
+}
+
+// A close decided before a counter landed is refused rather than recording the old text.
+func TestReviewStoreCloseOnAStaleReadIsRefused(t *testing.T) {
+	pool := newTestDB(t)
+	s := store.NewReviewStore(pool)
+	ctx := context.Background()
+	vid, _ := reviewVersion(t, pool)
+	charlie, bob := uuid.New(), uuid.New()
+	th := suggestedThread(t, s, vid, charlie, "six years")
+	c, err := th.CloseSuggestion(domain.DefaultReviewLimits, domain.ReviewSideAuthor, bob, domain.SuggestionChanged, "")
+	require.NoError(t, err)
+	r, err := th.Counter(domain.DefaultReviewLimits, domain.ReviewSideAuthor, bob, "five years")
+	require.NoError(t, err)
+	_, err = s.AppendRound(ctx, th.ID, r)
+	require.NoError(t, err)
+	_, err = s.CloseSuggestion(ctx, th.ID, c)
+	require.ErrorIs(t, err, store.ErrSuggestionChanged)
+}
+
+func TestReviewStoreDeleteRemovesTheSuggestion(t *testing.T) {
+	pool := newTestDB(t)
+	s := store.NewReviewStore(pool)
+	ctx := context.Background()
+	vid, _ := reviewVersion(t, pool)
+	th := suggestedThread(t, s, vid, uuid.New(), "six years")
+	require.NoError(t, s.DeleteThread(ctx, th.ID))
+	var n int
+	require.NoError(t, pool.Querier().QueryRow(ctx,
+		`SELECT (SELECT count(*) FROM review_suggestions) + (SELECT count(*) FROM review_suggestion_rounds)`).Scan(&n))
+	require.Zero(t, n)
+}
+
 // GetThread backs the gateway's by-id check: it returns the one thread asked
 // for, with its version id and every message oldest first.
 func TestReviewStoreGetReturnsOneThreadWithItsMessagesInOrder(t *testing.T) {

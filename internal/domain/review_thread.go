@@ -60,6 +60,8 @@ type ReviewThread struct {
 	Resolved        bool
 	CreatedAt       time.Time
 	Messages        []ReviewMessage
+	// Suggestion is nil for a plain comment.
+	Suggestion *ReviewSuggestion
 }
 
 // NewReviewMessage validates a message body and returns it trimmed. Length is

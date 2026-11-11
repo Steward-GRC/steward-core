@@ -28,6 +28,8 @@ const (
 	ReviewService_ReplyReviewThread_FullMethodName       = "/steward.core.v1.ReviewService/ReplyReviewThread"
 	ReviewService_SetReviewThreadResolved_FullMethodName = "/steward.core.v1.ReviewService/SetReviewThreadResolved"
 	ReviewService_DeleteReviewThread_FullMethodName      = "/steward.core.v1.ReviewService/DeleteReviewThread"
+	ReviewService_CounterReviewSuggestion_FullMethodName = "/steward.core.v1.ReviewService/CounterReviewSuggestion"
+	ReviewService_CloseReviewSuggestion_FullMethodName   = "/steward.core.v1.ReviewService/CloseReviewSuggestion"
 )
 
 // ReviewServiceClient is the client API for ReviewService service.
@@ -38,7 +40,9 @@ const (
 // with the version they were made on; a rejected version keeps its threads.
 // Errors: InvalidArgument (blank or too long text, occurrence < 1, bad id or
 // side), PermissionDenied (not the thread's approver, not the starter),
-// NotFound (unknown thread or version).
+// NotFound (unknown thread or version), FailedPrecondition (no suggestion on
+// the thread, it has ended, it is not the actor's turn, the outcome is not the
+// actor's to choose now, or the suggestion changed since it was read).
 type ReviewServiceClient interface {
 	AddReviewThread(ctx context.Context, in *AddReviewThreadRequest, opts ...grpc.CallOption) (*AddReviewThreadResponse, error)
 	ListReviewThreads(ctx context.Context, in *ListReviewThreadsRequest, opts ...grpc.CallOption) (*ListReviewThreadsResponse, error)
@@ -46,6 +50,8 @@ type ReviewServiceClient interface {
 	ReplyReviewThread(ctx context.Context, in *ReplyReviewThreadRequest, opts ...grpc.CallOption) (*ReplyReviewThreadResponse, error)
 	SetReviewThreadResolved(ctx context.Context, in *SetReviewThreadResolvedRequest, opts ...grpc.CallOption) (*SetReviewThreadResolvedResponse, error)
 	DeleteReviewThread(ctx context.Context, in *DeleteReviewThreadRequest, opts ...grpc.CallOption) (*DeleteReviewThreadResponse, error)
+	CounterReviewSuggestion(ctx context.Context, in *CounterReviewSuggestionRequest, opts ...grpc.CallOption) (*CounterReviewSuggestionResponse, error)
+	CloseReviewSuggestion(ctx context.Context, in *CloseReviewSuggestionRequest, opts ...grpc.CallOption) (*CloseReviewSuggestionResponse, error)
 }
 
 type reviewServiceClient struct {
@@ -116,6 +122,26 @@ func (c *reviewServiceClient) DeleteReviewThread(ctx context.Context, in *Delete
 	return out, nil
 }
 
+func (c *reviewServiceClient) CounterReviewSuggestion(ctx context.Context, in *CounterReviewSuggestionRequest, opts ...grpc.CallOption) (*CounterReviewSuggestionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CounterReviewSuggestionResponse)
+	err := c.cc.Invoke(ctx, ReviewService_CounterReviewSuggestion_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *reviewServiceClient) CloseReviewSuggestion(ctx context.Context, in *CloseReviewSuggestionRequest, opts ...grpc.CallOption) (*CloseReviewSuggestionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CloseReviewSuggestionResponse)
+	err := c.cc.Invoke(ctx, ReviewService_CloseReviewSuggestion_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ReviewServiceServer is the server API for ReviewService service.
 // All implementations must embed UnimplementedReviewServiceServer
 // for forward compatibility.
@@ -124,7 +150,9 @@ func (c *reviewServiceClient) DeleteReviewThread(ctx context.Context, in *Delete
 // with the version they were made on; a rejected version keeps its threads.
 // Errors: InvalidArgument (blank or too long text, occurrence < 1, bad id or
 // side), PermissionDenied (not the thread's approver, not the starter),
-// NotFound (unknown thread or version).
+// NotFound (unknown thread or version), FailedPrecondition (no suggestion on
+// the thread, it has ended, it is not the actor's turn, the outcome is not the
+// actor's to choose now, or the suggestion changed since it was read).
 type ReviewServiceServer interface {
 	AddReviewThread(context.Context, *AddReviewThreadRequest) (*AddReviewThreadResponse, error)
 	ListReviewThreads(context.Context, *ListReviewThreadsRequest) (*ListReviewThreadsResponse, error)
@@ -132,6 +160,8 @@ type ReviewServiceServer interface {
 	ReplyReviewThread(context.Context, *ReplyReviewThreadRequest) (*ReplyReviewThreadResponse, error)
 	SetReviewThreadResolved(context.Context, *SetReviewThreadResolvedRequest) (*SetReviewThreadResolvedResponse, error)
 	DeleteReviewThread(context.Context, *DeleteReviewThreadRequest) (*DeleteReviewThreadResponse, error)
+	CounterReviewSuggestion(context.Context, *CounterReviewSuggestionRequest) (*CounterReviewSuggestionResponse, error)
+	CloseReviewSuggestion(context.Context, *CloseReviewSuggestionRequest) (*CloseReviewSuggestionResponse, error)
 	mustEmbedUnimplementedReviewServiceServer()
 }
 
@@ -159,6 +189,12 @@ func (UnimplementedReviewServiceServer) SetReviewThreadResolved(context.Context,
 }
 func (UnimplementedReviewServiceServer) DeleteReviewThread(context.Context, *DeleteReviewThreadRequest) (*DeleteReviewThreadResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method DeleteReviewThread not implemented")
+}
+func (UnimplementedReviewServiceServer) CounterReviewSuggestion(context.Context, *CounterReviewSuggestionRequest) (*CounterReviewSuggestionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CounterReviewSuggestion not implemented")
+}
+func (UnimplementedReviewServiceServer) CloseReviewSuggestion(context.Context, *CloseReviewSuggestionRequest) (*CloseReviewSuggestionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CloseReviewSuggestion not implemented")
 }
 func (UnimplementedReviewServiceServer) mustEmbedUnimplementedReviewServiceServer() {}
 func (UnimplementedReviewServiceServer) testEmbeddedByValue()                       {}
@@ -289,6 +325,42 @@ func _ReviewService_DeleteReviewThread_Handler(srv interface{}, ctx context.Cont
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ReviewService_CounterReviewSuggestion_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CounterReviewSuggestionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ReviewServiceServer).CounterReviewSuggestion(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ReviewService_CounterReviewSuggestion_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ReviewServiceServer).CounterReviewSuggestion(ctx, req.(*CounterReviewSuggestionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ReviewService_CloseReviewSuggestion_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CloseReviewSuggestionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ReviewServiceServer).CloseReviewSuggestion(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ReviewService_CloseReviewSuggestion_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ReviewServiceServer).CloseReviewSuggestion(ctx, req.(*CloseReviewSuggestionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ReviewService_ServiceDesc is the grpc.ServiceDesc for ReviewService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -319,6 +391,14 @@ var ReviewService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "DeleteReviewThread",
 			Handler:    _ReviewService_DeleteReviewThread_Handler,
+		},
+		{
+			MethodName: "CounterReviewSuggestion",
+			Handler:    _ReviewService_CounterReviewSuggestion_Handler,
+		},
+		{
+			MethodName: "CloseReviewSuggestion",
+			Handler:    _ReviewService_CloseReviewSuggestion_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
