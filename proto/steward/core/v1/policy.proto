@@ -293,6 +293,46 @@ message MovePolicyResponse {
   Policy policy = 1;
 }
 
+// MovePoliciesItem is one document in a bulk move. new_number is empty when the
+// document cannot move; then refusal_code names why (RETIRED,
+// CATEGORY_REFUSES_TYPE) and refusal is the sentence to show. Both are empty
+// when it can.
+message MovePoliciesItem {
+  string policy_id = 1;
+  string title = 2;
+  // number is the document's number before the move.
+  string number = 3;
+  string new_number = 4;
+  string refusal_code = 5;
+  string refusal = 6;
+}
+
+// PreviewMovePoliciesRequest asks what moving the documents to home_category_id
+// would do. Nothing changes.
+message PreviewMovePoliciesRequest {
+  repeated string policy_ids = 1;
+  string home_category_id = 2;
+  string actor_user_id = 3;
+}
+
+message PreviewMovePoliciesResponse {
+  // items follow the order of policy_ids.
+  repeated MovePoliciesItem items = 1;
+}
+
+// MovePoliciesRequest moves the documents to home_category_id, all or none:
+// it is refused whole, with the first document's refusal, if any would be
+// refused. Each document is renumbered from the target's sequence, in order.
+message MovePoliciesRequest {
+  repeated string policy_ids = 1;
+  string home_category_id = 2;
+  string actor_user_id = 3;
+}
+
+message MovePoliciesResponse {
+  repeated MovePoliciesItem moved = 1;
+}
+
 message DiffVersionsRequest {
   string from_version_id = 1;
   string to_version_id = 2;
@@ -480,6 +520,10 @@ service PolicyService {
   rpc ListPoliciesByOwner(ListPoliciesByOwnerRequest) returns (ListPoliciesByOwnerResponse);
   rpc ReassignUserPolicies(ReassignUserPoliciesRequest) returns (ReassignUserPoliciesResponse);
   rpc MovePolicy(MovePolicyRequest) returns (MovePolicyResponse);
+  // PreviewMovePolicies is the dry run of MovePolicies.
+  rpc PreviewMovePolicies(PreviewMovePoliciesRequest) returns (PreviewMovePoliciesResponse);
+  // MovePolicies moves several documents to one category, all or none.
+  rpc MovePolicies(MovePoliciesRequest) returns (MovePoliciesResponse);
   rpc DiffVersions(DiffVersionsRequest) returns (DiffVersionsResponse);
   rpc GetEffectiveTemplate(GetEffectiveTemplateRequest) returns (GetEffectiveTemplateResponse);
   rpc SetPolicyTemplate(SetPolicyTemplateRequest) returns (SetPolicyTemplateResponse);

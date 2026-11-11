@@ -109,3 +109,17 @@ func TestTemplateLockNeedsDefaultRoundTrip(t *testing.T) {
 	require.Equal(t, 4005, info.Code)
 	require.Equal(t, "Travel", info.Metadata["category"])
 }
+
+func TestMoveRefusedRoundTrip(t *testing.T) {
+	st := status.Convert(errcodes.Error(context.Background(),
+		errcodes.MoveRefused("POL-EXP-000001", "CATEGORY_REFUSES_TYPE", "CATEGORY_REFUSES_TYPE: Conduct does not hold policy documents.")))
+	require.Equal(t, codes.FailedPrecondition, st.Code())
+	require.Contains(t, st.Message(), "CATEGORY_REFUSES_TYPE")
+	require.Contains(t, st.Message(), "POL-EXP-000001")
+
+	info, ok := apperrgrpc.FromStatus(st)
+	require.True(t, ok, "status must carry ErrorInfo")
+	require.Equal(t, "MOVE_REFUSED", info.Symbol)
+	require.Equal(t, 4006, info.Code)
+	require.Equal(t, "CATEGORY_REFUSES_TYPE", info.Metadata["reason"])
+}
