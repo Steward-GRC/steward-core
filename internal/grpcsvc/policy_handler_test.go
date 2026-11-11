@@ -3503,3 +3503,8 @@ func TestUpdateDraftContentFreeFormStillEnforcesEnvelopeInvariants(t *testing.T)
 		t.Fatalf("expected 0 audit events, got %d", len(cap.calls))
 	}
 }
+
+// SearchPolicies is not exercised through this fake; policy_search_handler_test.go wraps it.
+func (f *fakePolicyStore) SearchPolicies(_ context.Context, _ string, _ domain.DocumentType, _, _ int) ([]store.PolicySearchHit, bool, error) {
+	return nil, false, nil
+}

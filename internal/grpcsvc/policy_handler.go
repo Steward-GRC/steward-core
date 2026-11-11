@@ -62,6 +62,7 @@ type PolicyStorer interface {
 	ListAllPolicies(ctx context.Context) ([]domain.Policy, error)
 	ListPoliciesByOwner(ctx context.Context, ownerUserID uuid.UUID, includeRetired bool) ([]domain.Policy, error)
 	ReassignUserPolicies(ctx context.Context, fromUserID, toUserID uuid.UUID) ([]uuid.UUID, int, int, error)
+	SearchPolicies(ctx context.Context, query string, docType domain.DocumentType, limit, offset int) ([]store.PolicySearchHit, bool, error)
 }
 
 // appendixCopier copies a published version's appendices into a freshly created
