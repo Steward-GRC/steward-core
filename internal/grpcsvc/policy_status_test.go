@@ -47,8 +47,8 @@ func TestSetVersionStatusInReviewRefusesEmptyContent(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			h, fakePS, verID := statusHandler(t, domain.PolicyVersionStatusDraft, content)
 			_, err := h.SetVersionStatus(context.Background(), setStatusReq(verID, "in_review"))
-			if got := status.Code(err); got != codes.InvalidArgument {
-				t.Fatalf("code = %v (%v), want InvalidArgument", got, err)
+			if got := status.Code(err); got != codes.FailedPrecondition {
+				t.Fatalf("code = %v (%v), want FailedPrecondition", got, err)
 			}
 			if !strings.Contains(err.Error(), "no text") {
 				t.Fatalf("refusal should name the empty document, got: %v", err)
