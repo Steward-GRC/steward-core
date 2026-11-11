@@ -24,6 +24,7 @@ const _ = grpc.SupportPackageIsVersion9
 const (
 	ReviewService_AddReviewThread_FullMethodName         = "/steward.core.v1.ReviewService/AddReviewThread"
 	ReviewService_ListReviewThreads_FullMethodName       = "/steward.core.v1.ReviewService/ListReviewThreads"
+	ReviewService_GetReviewThread_FullMethodName         = "/steward.core.v1.ReviewService/GetReviewThread"
 	ReviewService_ReplyReviewThread_FullMethodName       = "/steward.core.v1.ReviewService/ReplyReviewThread"
 	ReviewService_SetReviewThreadResolved_FullMethodName = "/steward.core.v1.ReviewService/SetReviewThreadResolved"
 	ReviewService_DeleteReviewThread_FullMethodName      = "/steward.core.v1.ReviewService/DeleteReviewThread"
@@ -41,6 +42,7 @@ const (
 type ReviewServiceClient interface {
 	AddReviewThread(ctx context.Context, in *AddReviewThreadRequest, opts ...grpc.CallOption) (*AddReviewThreadResponse, error)
 	ListReviewThreads(ctx context.Context, in *ListReviewThreadsRequest, opts ...grpc.CallOption) (*ListReviewThreadsResponse, error)
+	GetReviewThread(ctx context.Context, in *GetReviewThreadRequest, opts ...grpc.CallOption) (*GetReviewThreadResponse, error)
 	ReplyReviewThread(ctx context.Context, in *ReplyReviewThreadRequest, opts ...grpc.CallOption) (*ReplyReviewThreadResponse, error)
 	SetReviewThreadResolved(ctx context.Context, in *SetReviewThreadResolvedRequest, opts ...grpc.CallOption) (*SetReviewThreadResolvedResponse, error)
 	DeleteReviewThread(ctx context.Context, in *DeleteReviewThreadRequest, opts ...grpc.CallOption) (*DeleteReviewThreadResponse, error)
@@ -68,6 +70,16 @@ func (c *reviewServiceClient) ListReviewThreads(ctx context.Context, in *ListRev
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListReviewThreadsResponse)
 	err := c.cc.Invoke(ctx, ReviewService_ListReviewThreads_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *reviewServiceClient) GetReviewThread(ctx context.Context, in *GetReviewThreadRequest, opts ...grpc.CallOption) (*GetReviewThreadResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetReviewThreadResponse)
+	err := c.cc.Invoke(ctx, ReviewService_GetReviewThread_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -116,6 +128,7 @@ func (c *reviewServiceClient) DeleteReviewThread(ctx context.Context, in *Delete
 type ReviewServiceServer interface {
 	AddReviewThread(context.Context, *AddReviewThreadRequest) (*AddReviewThreadResponse, error)
 	ListReviewThreads(context.Context, *ListReviewThreadsRequest) (*ListReviewThreadsResponse, error)
+	GetReviewThread(context.Context, *GetReviewThreadRequest) (*GetReviewThreadResponse, error)
 	ReplyReviewThread(context.Context, *ReplyReviewThreadRequest) (*ReplyReviewThreadResponse, error)
 	SetReviewThreadResolved(context.Context, *SetReviewThreadResolvedRequest) (*SetReviewThreadResolvedResponse, error)
 	DeleteReviewThread(context.Context, *DeleteReviewThreadRequest) (*DeleteReviewThreadResponse, error)
@@ -134,6 +147,9 @@ func (UnimplementedReviewServiceServer) AddReviewThread(context.Context, *AddRev
 }
 func (UnimplementedReviewServiceServer) ListReviewThreads(context.Context, *ListReviewThreadsRequest) (*ListReviewThreadsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListReviewThreads not implemented")
+}
+func (UnimplementedReviewServiceServer) GetReviewThread(context.Context, *GetReviewThreadRequest) (*GetReviewThreadResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetReviewThread not implemented")
 }
 func (UnimplementedReviewServiceServer) ReplyReviewThread(context.Context, *ReplyReviewThreadRequest) (*ReplyReviewThreadResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ReplyReviewThread not implemented")
@@ -197,6 +213,24 @@ func _ReviewService_ListReviewThreads_Handler(srv interface{}, ctx context.Conte
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(ReviewServiceServer).ListReviewThreads(ctx, req.(*ListReviewThreadsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ReviewService_GetReviewThread_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetReviewThreadRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ReviewServiceServer).GetReviewThread(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ReviewService_GetReviewThread_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ReviewServiceServer).GetReviewThread(ctx, req.(*GetReviewThreadRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -269,6 +303,10 @@ var ReviewService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListReviewThreads",
 			Handler:    _ReviewService_ListReviewThreads_Handler,
+		},
+		{
+			MethodName: "GetReviewThread",
+			Handler:    _ReviewService_GetReviewThread_Handler,
 		},
 		{
 			MethodName: "ReplyReviewThread",

@@ -6,6 +6,7 @@ package grpcsvc
 import (
 	"context"
 	"errors"
+	"strings"
 
 	log "github.com/Bugs5382/go-log"
 	"github.com/google/uuid"
@@ -180,6 +181,31 @@ func (h *ReviewHandler) ListReviewThreads(ctx context.Context, req *corev1.ListR
 	l.Debug("review threads listed", log.F("policy_version_id", versionID.String()), log.F("count", len(out)),
 		log.F("filtered", approver != uuid.Nil))
 	return &corev1.ListReviewThreadsResponse{Threads: out}, nil
+}
+
+// GetReviewThread handles ReviewService.GetReviewThread: one thread with its
+// messages, for the gateway's by-id checks. It applies no actor or audience
+// filter and emits no audit event; it is a read.
+func (h *ReviewHandler) GetReviewThread(ctx context.Context, req *corev1.GetReviewThreadRequest) (*corev1.GetReviewThreadResponse, error) {
+	l := logger.Ctx(ctx)
+	id, err := uuid.Parse(strings.TrimSpace(req.GetThreadId()))
+	if err != nil {
+		l.Debug("get review thread refused: bad thread id")
+		return nil, status.Errorf(codes.InvalidArgument, "invalid thread_id: %v", err)
+	}
+	l.Debug("get review thread", log.F("thread_id", id.String()))
+	t, err := h.store.GetThread(ctx, id)
+	if err != nil {
+		if errors.Is(err, store.ErrReviewThreadNotFound) {
+			l.Debug("get review thread: not found", log.F("thread_id", id.String()))
+		} else {
+			l.Error(err, "get review thread failed", log.F("thread_id", id.String()))
+		}
+		return nil, reviewErr(ctx, "get_review_thread", err)
+	}
+	l.Debug("review thread read", log.F("thread_id", id.String()), log.F("policy_version_id", t.PolicyVersionID.String()),
+		log.F("messages", len(t.Messages)), log.F("resolved", t.Resolved))
+	return &corev1.GetReviewThreadResponse{Thread: reviewThreadToProto(t)}, nil
 }
 
 // loadForAct reads a thread and checks that the actor may act on it.

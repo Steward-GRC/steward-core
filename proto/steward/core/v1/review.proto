@@ -76,6 +76,16 @@ message ListReviewThreadsResponse {
   repeated ReviewThread threads = 1;
 }
 
+// GetReviewThreadRequest reads one thread by id. Core applies no actor or
+// audience filter: the gateway decides who may see it.
+message GetReviewThreadRequest {
+  string thread_id = 1;
+}
+
+message GetReviewThreadResponse {
+  ReviewThread thread = 1;
+}
+
 // ReplyReviewThreadRequest adds a message. For the REVIEWER side the actor
 // must be the thread's approver.
 message ReplyReviewThreadRequest {
@@ -121,6 +131,7 @@ message DeleteReviewThreadResponse {}
 service ReviewService {
   rpc AddReviewThread(AddReviewThreadRequest) returns (AddReviewThreadResponse);
   rpc ListReviewThreads(ListReviewThreadsRequest) returns (ListReviewThreadsResponse);
+  rpc GetReviewThread(GetReviewThreadRequest) returns (GetReviewThreadResponse);
   rpc ReplyReviewThread(ReplyReviewThreadRequest) returns (ReplyReviewThreadResponse);
   rpc SetReviewThreadResolved(SetReviewThreadResolvedRequest) returns (SetReviewThreadResolvedResponse);
   rpc DeleteReviewThread(DeleteReviewThreadRequest) returns (DeleteReviewThreadResponse);
