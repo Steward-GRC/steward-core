@@ -21,6 +21,8 @@ type fakeDefinitionLibraryBackend struct {
 	defs        map[uuid.UUID]domain.DefinitionEntry
 	attached    map[uuid.UUID][]uuid.UUID
 	deleteInUse bool
+	// writeErr, when set, is what create and update return.
+	writeErr error
 }
 
 func newFakeDefinitionLibraryBackend() *fakeDefinitionLibraryBackend {
@@ -50,12 +52,18 @@ func (f *fakeDefinitionLibraryBackend) ListPolicyDefinitionCandidates(_ context.
 }
 
 func (f *fakeDefinitionLibraryBackend) CreateDefinitionEntry(_ context.Context, d domain.DefinitionEntry) (domain.DefinitionEntry, error) {
+	if f.writeErr != nil {
+		return domain.DefinitionEntry{}, f.writeErr
+	}
 	d.ID = uuid.New()
 	f.defs[d.ID] = d
 	return d, nil
 }
 
 func (f *fakeDefinitionLibraryBackend) UpdateDefinitionEntry(_ context.Context, id uuid.UUID, d domain.DefinitionEntry) (domain.DefinitionEntry, error) {
+	if f.writeErr != nil {
+		return domain.DefinitionEntry{}, f.writeErr
+	}
 	cur, ok := f.defs[id]
 	if !ok {
 		return domain.DefinitionEntry{}, store.ErrDefinitionEntryNotFound
@@ -174,5 +182,39 @@ func TestDefinitionLibraryHandlerSetPolicyDefinitionsAudits(t *testing.T) {
 	}
 	if len(cap.calls) != 1 || cap.calls[0].event.Action != "policy.definitions_changed" {
 		t.Fatalf("want policy.definitions_changed audit, got %+v", cap.calls)
+	}
+}
+
+// The title is the key (issue #70): a taken title is AlreadyExists and a title
+// that is empty once trimmed is InvalidArgument, on create and on update.
+func TestDefinitionLibraryHandler_TitleErrorsMapToCodes(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+		want codes.Code
+	}{
+		{"taken", store.ErrDefinitionTermTaken, codes.AlreadyExists},
+		{"empty after trimming", domain.ErrEmptyDefinitionTerm, codes.InvalidArgument},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			be := newFakeDefinitionLibraryBackend()
+			be.writeErr = tc.err
+			h := grpcsvc.NewDefinitionLibraryHandler(be, nil)
+			_, err := h.CreateDefinitionEntry(context.Background(), &corev1.CreateDefinitionEntryRequest{
+				Input: &corev1.DefinitionEntryInput{CategoryId: uuid.New().String(), Term: "Asset", Definition: "d"},
+			})
+			if status.Code(err) != tc.want {
+				t.Fatalf("create: code = %v, want %v", status.Code(err), tc.want)
+			}
+			id := uuid.New()
+			be.defs[id] = domain.DefinitionEntry{ID: id, Term: "x", Definition: "y"}
+			_, err = h.UpdateDefinitionEntry(context.Background(), &corev1.UpdateDefinitionEntryRequest{
+				Id: id.String(), Input: &corev1.DefinitionEntryInput{Term: "t", Definition: "d"},
+			})
+			if status.Code(err) != tc.want {
+				t.Fatalf("update: code = %v, want %v", status.Code(err), tc.want)
+			}
+		})
 	}
 }
