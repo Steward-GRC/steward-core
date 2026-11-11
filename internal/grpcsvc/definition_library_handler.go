@@ -63,6 +63,19 @@ func definitionEntriesToProto(list []domain.DefinitionEntry) []*corev1.Definitio
 	return out
 }
 
+// definitionWriteError maps the refusals of a definition create or update. The title is the key: a
+// taken one is AlreadyExists, one that is empty once trimmed is InvalidArgument.
+func definitionWriteError(op string, err error) error {
+	switch {
+	case errors.Is(err, store.ErrDefinitionTermTaken):
+		return status.Errorf(codes.AlreadyExists, "%v", err)
+	case errors.Is(err, domain.ErrEmptyDefinitionTerm):
+		return status.Errorf(codes.InvalidArgument, "%v", err)
+	default:
+		return status.Errorf(codes.Internal, "%s: %v", op, err)
+	}
+}
+
 func (h *DefinitionLibraryHandler) ListDefinitionEntries(ctx context.Context, req *corev1.ListDefinitionEntriesRequest) (*corev1.ListDefinitionEntriesResponse, error) {
 	var categoryID *uuid.UUID
 	if s := req.GetCategoryId(); s != "" {
@@ -106,7 +119,7 @@ func (h *DefinitionLibraryHandler) CreateDefinitionEntry(ctx context.Context, re
 	}
 	saved, err := h.store.CreateDefinitionEntry(ctx, d)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "create definition: %v", err)
+		return nil, definitionWriteError("create definition", err)
 	}
 	if h.auditor != nil {
 		_ = h.auditor.Emit(ctx, audit.Event{
@@ -132,7 +145,7 @@ func (h *DefinitionLibraryHandler) UpdateDefinitionEntry(ctx context.Context, re
 		if errors.Is(err, store.ErrDefinitionEntryNotFound) {
 			return nil, status.Errorf(codes.NotFound, "%v", err)
 		}
-		return nil, status.Errorf(codes.Internal, "update definition: %v", err)
+		return nil, definitionWriteError("update definition", err)
 	}
 	if h.auditor != nil {
 		_ = h.auditor.Emit(ctx, audit.Event{

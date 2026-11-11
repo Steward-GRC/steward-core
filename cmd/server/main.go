@@ -112,10 +112,11 @@ func run(ctx context.Context, logger log.Logger) error {
 	templates := store.NewTemplateStore(db)
 	policies := store.NewPolicyStore(db)
 	appendices := store.NewAppendixStore(db)
+	versionLinks := store.NewVersionLinkStore(db)
 	emailService := store.NewEmailServiceStore(db, box)
 
 	policyH := grpcsvc.NewPolicyHandler(policies, categories, templates, domain.NoopValidator{}, auditor).
-		WithLifecycleEmitter(lifecycleEmitter).WithAppendixCopier(appendices)
+		WithLifecycleEmitter(lifecycleEmitter).WithAppendixCopier(appendices).WithLinkCopier(versionLinks)
 	settingsH := grpcsvc.NewSettingsHandler(store.NewSettingsStore(db), auditor).WithEmailServiceStore(emailService)
 	deps := readiness.Deps{Postgres: readiness.PostgresDB(db), Broker: conn}
 	if cfg.RedisAddr != "" {
@@ -215,6 +216,7 @@ func run(ctx context.Context, logger log.Logger) error {
 		corev1.RegisterSettingsServiceServer(s, settingsH)
 		corev1.RegisterAppendixServiceServer(s, grpcsvc.NewAppendixHandler(appendices))
 		corev1.RegisterPolicyAppendixServiceServer(s, grpcsvc.NewPolicyAppendixHandler(store.NewPolicyAppendixStore(db), auditor))
+		corev1.RegisterVersionLinkServiceServer(s, grpcsvc.NewVersionLinkHandler(versionLinks, auditor))
 		corev1.RegisterRelationServiceServer(s, grpcsvc.NewRelationHandler(store.NewRelationStore(db)))
 		corev1.RegisterContactServiceServer(s, grpcsvc.NewContactHandler(store.NewContactStore(db)))
 		corev1.RegisterReferenceServiceServer(s, grpcsvc.NewReferenceHandler(store.NewReferenceStore(db), auditor))
