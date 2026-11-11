@@ -82,6 +82,16 @@ message ListPolicyAppendicesResponse {
   repeated PolicyAppendix appendices = 1;
 }
 
+// GetPolicyAppendixRequest looks one appendix up by id. A retired appendix is
+// returned too, with an empty letter.
+message GetPolicyAppendixRequest {
+  string id = 1;
+}
+
+message GetPolicyAppendixResponse {
+  PolicyAppendix appendix = 1;
+}
+
 // CreatePolicyAppendixRequest adds an appendix as a draft v1, last among the
 // live ones. A blank title becomes "Appendix <letter>", moving on to the next
 // letter while the policy's appendices (retired ones included) already use it.
@@ -143,6 +153,7 @@ message RestoreAppendixResponse {
 // PolicyAppendixService holds the appendices a policy or procedure owns.
 service PolicyAppendixService {
   rpc ListPolicyAppendices(ListPolicyAppendicesRequest) returns (ListPolicyAppendicesResponse);
+  rpc GetPolicyAppendix(GetPolicyAppendixRequest) returns (GetPolicyAppendixResponse);
   rpc CreatePolicyAppendix(CreatePolicyAppendixRequest) returns (CreatePolicyAppendixResponse);
   rpc SaveAppendixDraft(SaveAppendixDraftRequest) returns (SaveAppendixDraftResponse);
   rpc PublishAppendix(PublishAppendixRequest) returns (PublishAppendixResponse);

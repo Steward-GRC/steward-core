@@ -157,9 +157,10 @@ func run(ctx context.Context, logger log.Logger) error {
 	} else {
 		logger.Info("S3_ENDPOINT is not set: editor assets are off")
 	}
-	assetH := grpcsvc.NewAssetHandler(store.NewAssetStore(db), nil, auditor).WithSettings(store.NewAssetSettingsStore(db))
+	assetStore := store.NewAssetStore(db)
+	assetH := grpcsvc.NewAssetHandler(assetStore, nil, auditor).WithSettings(store.NewAssetSettingsStore(db)).WithLinks(assetStore)
 	if objects != nil {
-		assetH = grpcsvc.NewAssetHandler(store.NewAssetStore(db), objects, auditor).WithSettings(store.NewAssetSettingsStore(db))
+		assetH = grpcsvc.NewAssetHandler(assetStore, objects, auditor).WithSettings(store.NewAssetSettingsStore(db)).WithLinks(assetStore)
 	}
 	var auth *server.Auth
 	if cfg.WorkloadAuthEnabled {

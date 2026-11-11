@@ -23,6 +23,7 @@ const _ = grpc.SupportPackageIsVersion9
 
 const (
 	PolicyAppendixService_ListPolicyAppendices_FullMethodName = "/steward.core.v1.PolicyAppendixService/ListPolicyAppendices"
+	PolicyAppendixService_GetPolicyAppendix_FullMethodName    = "/steward.core.v1.PolicyAppendixService/GetPolicyAppendix"
 	PolicyAppendixService_CreatePolicyAppendix_FullMethodName = "/steward.core.v1.PolicyAppendixService/CreatePolicyAppendix"
 	PolicyAppendixService_SaveAppendixDraft_FullMethodName    = "/steward.core.v1.PolicyAppendixService/SaveAppendixDraft"
 	PolicyAppendixService_PublishAppendix_FullMethodName      = "/steward.core.v1.PolicyAppendixService/PublishAppendix"
@@ -37,6 +38,7 @@ const (
 // PolicyAppendixService holds the appendices a policy or procedure owns.
 type PolicyAppendixServiceClient interface {
 	ListPolicyAppendices(ctx context.Context, in *ListPolicyAppendicesRequest, opts ...grpc.CallOption) (*ListPolicyAppendicesResponse, error)
+	GetPolicyAppendix(ctx context.Context, in *GetPolicyAppendixRequest, opts ...grpc.CallOption) (*GetPolicyAppendixResponse, error)
 	CreatePolicyAppendix(ctx context.Context, in *CreatePolicyAppendixRequest, opts ...grpc.CallOption) (*CreatePolicyAppendixResponse, error)
 	SaveAppendixDraft(ctx context.Context, in *SaveAppendixDraftRequest, opts ...grpc.CallOption) (*SaveAppendixDraftResponse, error)
 	PublishAppendix(ctx context.Context, in *PublishAppendixRequest, opts ...grpc.CallOption) (*PublishAppendixResponse, error)
@@ -56,6 +58,16 @@ func (c *policyAppendixServiceClient) ListPolicyAppendices(ctx context.Context, 
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListPolicyAppendicesResponse)
 	err := c.cc.Invoke(ctx, PolicyAppendixService_ListPolicyAppendices_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *policyAppendixServiceClient) GetPolicyAppendix(ctx context.Context, in *GetPolicyAppendixRequest, opts ...grpc.CallOption) (*GetPolicyAppendixResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetPolicyAppendixResponse)
+	err := c.cc.Invoke(ctx, PolicyAppendixService_GetPolicyAppendix_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -119,6 +131,7 @@ func (c *policyAppendixServiceClient) RestoreAppendix(ctx context.Context, in *R
 // PolicyAppendixService holds the appendices a policy or procedure owns.
 type PolicyAppendixServiceServer interface {
 	ListPolicyAppendices(context.Context, *ListPolicyAppendicesRequest) (*ListPolicyAppendicesResponse, error)
+	GetPolicyAppendix(context.Context, *GetPolicyAppendixRequest) (*GetPolicyAppendixResponse, error)
 	CreatePolicyAppendix(context.Context, *CreatePolicyAppendixRequest) (*CreatePolicyAppendixResponse, error)
 	SaveAppendixDraft(context.Context, *SaveAppendixDraftRequest) (*SaveAppendixDraftResponse, error)
 	PublishAppendix(context.Context, *PublishAppendixRequest) (*PublishAppendixResponse, error)
@@ -136,6 +149,9 @@ type UnimplementedPolicyAppendixServiceServer struct{}
 
 func (UnimplementedPolicyAppendixServiceServer) ListPolicyAppendices(context.Context, *ListPolicyAppendicesRequest) (*ListPolicyAppendicesResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListPolicyAppendices not implemented")
+}
+func (UnimplementedPolicyAppendixServiceServer) GetPolicyAppendix(context.Context, *GetPolicyAppendixRequest) (*GetPolicyAppendixResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetPolicyAppendix not implemented")
 }
 func (UnimplementedPolicyAppendixServiceServer) CreatePolicyAppendix(context.Context, *CreatePolicyAppendixRequest) (*CreatePolicyAppendixResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method CreatePolicyAppendix not implemented")
@@ -187,6 +203,24 @@ func _PolicyAppendixService_ListPolicyAppendices_Handler(srv interface{}, ctx co
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(PolicyAppendixServiceServer).ListPolicyAppendices(ctx, req.(*ListPolicyAppendicesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PolicyAppendixService_GetPolicyAppendix_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetPolicyAppendixRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PolicyAppendixServiceServer).GetPolicyAppendix(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PolicyAppendixService_GetPolicyAppendix_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PolicyAppendixServiceServer).GetPolicyAppendix(ctx, req.(*GetPolicyAppendixRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -291,6 +325,10 @@ var PolicyAppendixService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListPolicyAppendices",
 			Handler:    _PolicyAppendixService_ListPolicyAppendices_Handler,
+		},
+		{
+			MethodName: "GetPolicyAppendix",
+			Handler:    _PolicyAppendixService_GetPolicyAppendix_Handler,
 		},
 		{
 			MethodName: "CreatePolicyAppendix",

@@ -63,6 +63,8 @@ type fakePolicyStore struct {
 	policies      map[uuid.UUID]domain.Policy
 	versions      map[uuid.UUID]domain.PolicyVersion
 	draftByPolicy map[uuid.UUID]domain.PolicyVersion
+	// moveSeq is the bulk-move fake's per-category counters (policy_move_handler_test.go).
+	moveSeq map[string]*int
 	// templateUpdateAvailable is the canned answer for
 	// IsTemplateUpdateAvailable; templateUpdateErr forces an error path.
 	templateUpdateAvailable bool
@@ -1603,6 +1605,18 @@ func (f *fakePolicyStore) SetTemplate(_ context.Context, policyID, templateID uu
 	return p, nil
 }
 
+func (f *fakePolicyStore) ResetStartingDraft(_ context.Context, draftID, templateVersionID uuid.UUID) error {
+	pv, ok := f.versions[draftID]
+	if !ok || pv.Status != domain.PolicyVersionStatusDraft {
+		return pgx.ErrNoRows
+	}
+	pv.TemplateVersionID = templateVersionID
+	pv.ContentJSON = "{}"
+	f.versions[draftID] = pv
+	f.draftByPolicy[pv.PolicyID] = pv
+	return nil
+}
+
 func (f *fakePolicyStore) ListAllPolicies(_ context.Context) ([]domain.Policy, error) {
 	out := make([]domain.Policy, 0, len(f.policies))
 	for _, p := range f.policies {
@@ -2635,9 +2649,9 @@ func TestSetVersionStatusRejectsNonStoredStatus(t *testing.T) {
 	_, pv := seedVersion(t, fakePS, domain.PolicyVersionStatusDraft)
 
 	h := grpcsvc.NewPolicyHandler(fakePS, newFakeCategoryStore(), &fakeTemplateStore{}, domain.NoopValidator{}, nil)
-	// "in_review" is an approval-lifecycle status, not a stored version status.
+	// "approved" is an approval-lifecycle status, not a stored version status.
 	_, err := h.SetVersionStatus(context.Background(), &corev1.SetVersionStatusRequest{
-		PolicyVersionId: pv.ID.String(), Status: "in_review", ActorUserId: uuid.New().String(),
+		PolicyVersionId: pv.ID.String(), Status: "approved", ActorUserId: uuid.New().String(),
 	})
 	if status.Code(err) != codes.InvalidArgument {
 		t.Fatalf("expected InvalidArgument, got %v", err)

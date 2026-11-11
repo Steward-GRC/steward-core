@@ -331,3 +331,5 @@ func TestAssetSettings_Validation(t *testing.T) {
 		t.Errorf("no settings store: code = %v, want FailedPrecondition", status.Code(err))
 	}
 }
+
+func (failingObjects) Delete(context.Context, string) error { return errors.New("store down") }

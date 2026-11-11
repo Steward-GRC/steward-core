@@ -102,10 +102,65 @@ message SetAssetSettingsResponse {
   AssetSettings settings = 1;
 }
 
+// AssetDocumentLink says where a stored file is used: the document that holds
+// its url in a draft or published version's content.
+message AssetDocumentLink {
+  string policy_id = 1;
+  // The document's title.
+  string title = 2;
+  // "policy" when the link is in the document's own content, "appendix" when
+  // it is in one of the document's appendices. A document appears once per
+  // place.
+  string location = 3;
+}
+
+// StoredAsset is a stored file with where it is used.
+message StoredAsset {
+  // The file's name, kind, size, stored time and uploader
+  // (created_by_user_id).
+  Asset asset = 1;
+  // True when at least one document links to it.
+  bool linked = 2;
+  repeated AssetDocumentLink documents = 3;
+}
+
+// ListAssetsRequest lists the stored editor files. Reporting attachments are
+// a separate store and never appear.
+message ListAssetsRequest {
+  // Only files no document links to.
+  bool unlinked_only = 1;
+}
+
+// ListAssetsResponse is ordered by creation time, newest first.
+message ListAssetsResponse {
+  repeated StoredAsset assets = 1;
+}
+
+// DeleteAssetRequest deletes a stored file at once, even when a document still
+// links to it. The gateway allows only an admin to call this.
+message DeleteAssetRequest {
+  string id = 1;
+  // The admin, recorded on the audit entry.
+  string actor_user_id = 2;
+}
+
+// DeleteAssetResponse echoes what was deleted. removed_from lists the
+// documents whose content had the file or image card taken out. No version is
+// created and nothing is added to any version history; the only record is the
+// asset.deleted audit entry.
+message DeleteAssetResponse {
+  string id = 1;
+  string filename = 2;
+  string kind = 3;
+  repeated AssetDocumentLink removed_from = 4;
+}
+
 // AssetService stores and serves editor images and files.
 service AssetService {
   rpc UploadAsset(UploadAssetRequest) returns (UploadAssetResponse);
   rpc GetAsset(GetAssetRequest) returns (GetAssetResponse);
   rpc GetAssetSettings(GetAssetSettingsRequest) returns (GetAssetSettingsResponse);
   rpc SetAssetSettings(SetAssetSettingsRequest) returns (SetAssetSettingsResponse);
+  rpc ListAssets(ListAssetsRequest) returns (ListAssetsResponse);
+  rpc DeleteAsset(DeleteAssetRequest) returns (DeleteAssetResponse);
 }
