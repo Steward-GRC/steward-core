@@ -29,7 +29,7 @@ var services = []grpc.ServiceDesc{
 	corev1.SettingsService_ServiceDesc, corev1.AppendixService_ServiceDesc, corev1.RelationService_ServiceDesc,
 	corev1.ContactService_ServiceDesc, corev1.ReferenceService_ServiceDesc, corev1.DefinitionLibraryService_ServiceDesc,
 	corev1.EmailServiceSecretService_ServiceDesc, corev1.AssetService_ServiceDesc, corev1.ReviewService_ServiceDesc,
-	corev1.ReviewSnapshotService_ServiceDesc,
+	corev1.ReviewSnapshotService_ServiceDesc, corev1.PolicyAppendixService_ServiceDesc,
 }
 
 // The internal callers act as themselves: each reads what its own job needs
