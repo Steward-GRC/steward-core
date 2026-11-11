@@ -41,8 +41,56 @@ message ReviewThread {
   string created_by = 8;
   // Oldest first; the first is the one that started the thread.
   repeated ReviewMessage messages = 9;
-  // 20 is held for the suggestion added by the suggestions work.
+  // Set when the thread carries a suggested change; unset for a plain comment.
+  ReviewSuggestion suggestion = 10;
+  // 20 stays reserved: buf breaking refuses to drop a reservation once shipped.
   reserved 20;
+}
+
+// SuggestionOutcome is how a suggestion ended. A suggestion ends in exactly
+// one outcome; reopening its thread does not change it.
+enum SuggestionOutcome {
+  SUGGESTION_OUTCOME_UNSPECIFIED = 0;
+  // The author changed the text as suggested (author, on their turn).
+  SUGGESTION_OUTCOME_CHANGED = 1;
+  // The reviewer agreed with the author's last text (reviewer, on their turn).
+  SUGGESTION_OUTCOME_AGREED = 2;
+  // The author removed the note (author, on their turn).
+  SUGGESTION_OUTCOME_REMOVED = 3;
+  // The side that proposed first took it back (while it is not their turn).
+  SUGGESTION_OUTCOME_WITHDRAWN = 4;
+  // The side on turn declined; a reason is required.
+  SUGGESTION_OUTCOME_NOT_AGREED = 5;
+}
+
+// SuggestionRound is one proposal or counter. Round 1 is the proposal.
+message SuggestionRound {
+  int32 seq = 1;
+  ReviewSide side = 2;
+  string user_id = 3;
+  string text = 4;
+  google.protobuf.Timestamp created_at = 5;
+}
+
+// ReviewSuggestion is a proposed replacement for the quoted text, answered by
+// counters in turn. Core keeps the rounds and the outcome only; the client
+// applies accepted text to the document and saves it.
+message ReviewSuggestion {
+  // The latest round's text (the current proposal).
+  string text = 1;
+  // The side whose turn it is: the other side of the latest round. Still the
+  // other side of the latest round after the suggestion ends.
+  ReviewSide turn = 2;
+  // Oldest first.
+  repeated SuggestionRound rounds = 3;
+  // UNSPECIFIED while the suggestion is open.
+  SuggestionOutcome outcome = 4;
+  string reason = 5;
+  // Empty while open.
+  string closed_by = 6;
+  // The text at close, on every outcome.
+  string closed_text = 7;
+  google.protobuf.Timestamp closed_at = 8;
 }
 
 // AddReviewThreadRequest starts a thread with its first message. For the
@@ -56,7 +104,11 @@ message AddReviewThreadRequest {
   int32 occurrence = 5;
   string body = 6;
   string approver_user_id = 7;
-  // 20 is held for the suggested text added by the suggestions work.
+  // Replacement text for the quote. Empty, or equal to the quote after
+  // trimming, makes a plain comment. Otherwise the thread carries a
+  // suggestion that starts on the other side's turn. At most the quote limit.
+  string suggested_text = 8;
+  // 20 stays reserved: buf breaking refuses to drop a reservation once shipped.
   reserved 20;
 }
 
@@ -113,15 +165,47 @@ message DeleteReviewThreadRequest {
 
 message DeleteReviewThreadResponse {}
 
+// CounterReviewSuggestionRequest adds a round from the side whose turn it is.
+// For the REVIEWER side the actor must be the thread's approver.
+message CounterReviewSuggestionRequest {
+  string actor_user_id = 1;
+  ReviewSide actor_side = 2;
+  string thread_id = 3;
+  string text = 4;
+}
+
+message CounterReviewSuggestionResponse {
+  ReviewThread thread = 1;
+}
+
+// CloseReviewSuggestionRequest ends the suggestion with one outcome, resolves
+// the thread and records the text and the closer. reason is required for
+// NOT_AGREED. For the REVIEWER side the actor must be the thread's approver.
+message CloseReviewSuggestionRequest {
+  string actor_user_id = 1;
+  ReviewSide actor_side = 2;
+  string thread_id = 3;
+  SuggestionOutcome outcome = 4;
+  string reason = 5;
+}
+
+message CloseReviewSuggestionResponse {
+  ReviewThread thread = 1;
+}
+
 // ReviewService keeps inline review threads on policy versions. Threads stay
 // with the version they were made on; a rejected version keeps its threads.
 // Errors: InvalidArgument (blank or too long text, occurrence < 1, bad id or
 // side), PermissionDenied (not the thread's approver, not the starter),
-// NotFound (unknown thread or version).
+// NotFound (unknown thread or version), FailedPrecondition (no suggestion on
+// the thread, it has ended, it is not the actor's turn, the outcome is not the
+// actor's to choose now, or the suggestion changed since it was read).
 service ReviewService {
   rpc AddReviewThread(AddReviewThreadRequest) returns (AddReviewThreadResponse);
   rpc ListReviewThreads(ListReviewThreadsRequest) returns (ListReviewThreadsResponse);
   rpc ReplyReviewThread(ReplyReviewThreadRequest) returns (ReplyReviewThreadResponse);
   rpc SetReviewThreadResolved(SetReviewThreadResolvedRequest) returns (SetReviewThreadResolvedResponse);
   rpc DeleteReviewThread(DeleteReviewThreadRequest) returns (DeleteReviewThreadResponse);
+  rpc CounterReviewSuggestion(CounterReviewSuggestionRequest) returns (CounterReviewSuggestionResponse);
+  rpc CloseReviewSuggestion(CloseReviewSuggestionRequest) returns (CloseReviewSuggestionResponse);
 }

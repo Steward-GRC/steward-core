@@ -6,6 +6,7 @@ package grpcsvc
 import (
 	"context"
 	"errors"
+	"strconv"
 
 	log "github.com/Bugs5382/go-log"
 	"github.com/google/uuid"
@@ -27,6 +28,8 @@ type reviewBackend interface {
 	AddMessage(ctx context.Context, threadID uuid.UUID, m domain.ReviewMessage) (domain.ReviewThread, error)
 	SetResolved(ctx context.Context, id uuid.UUID, resolved bool) (domain.ReviewThread, error)
 	DeleteThread(ctx context.Context, id uuid.UUID) error
+	AppendRound(ctx context.Context, threadID uuid.UUID, r domain.SuggestionRound) (domain.ReviewThread, error)
+	CloseSuggestion(ctx context.Context, threadID uuid.UUID, c domain.SuggestionClose) (domain.ReviewThread, error)
 }
 
 // ReviewHandler implements corev1.ReviewServiceServer.
@@ -53,11 +56,62 @@ func reviewThreadToProto(t domain.ReviewThread) *corev1.ReviewThread {
 	for i, m := range t.Messages {
 		msgs[i] = reviewMessageToProto(m)
 	}
-	return &corev1.ReviewThread{
+	out := &corev1.ReviewThread{
 		Id: t.ID.String(), PolicyVersionId: t.PolicyVersionID.String(), Quote: t.Quote, Occurrence: int32(t.Occurrence),
 		Resolved: t.Resolved, CreatedAt: timestamppb.New(t.CreatedAt), ApproverUserId: t.ApproverUserID.String(),
 		CreatedBy: t.CreatedBy.String(), Messages: msgs,
 	}
+	if t.Suggestion != nil {
+		out.Suggestion = suggestionToProto(*t.Suggestion)
+	}
+	return out
+}
+
+func reviewSideToProto(s domain.ReviewSide) corev1.ReviewSide {
+	switch s {
+	case domain.ReviewSideAuthor:
+		return corev1.ReviewSide_REVIEW_SIDE_AUTHOR
+	case domain.ReviewSideReviewer:
+		return corev1.ReviewSide_REVIEW_SIDE_REVIEWER
+	default:
+		return corev1.ReviewSide_REVIEW_SIDE_UNSPECIFIED
+	}
+}
+
+var suggestionOutcomeToProtoMap = map[domain.SuggestionOutcome]corev1.SuggestionOutcome{
+	domain.SuggestionChanged:   corev1.SuggestionOutcome_SUGGESTION_OUTCOME_CHANGED,
+	domain.SuggestionAgreed:    corev1.SuggestionOutcome_SUGGESTION_OUTCOME_AGREED,
+	domain.SuggestionRemoved:   corev1.SuggestionOutcome_SUGGESTION_OUTCOME_REMOVED,
+	domain.SuggestionWithdrawn: corev1.SuggestionOutcome_SUGGESTION_OUTCOME_WITHDRAWN,
+	domain.SuggestionNotAgreed: corev1.SuggestionOutcome_SUGGESTION_OUTCOME_NOT_AGREED,
+}
+
+func suggestionOutcomeFromProto(o corev1.SuggestionOutcome) domain.SuggestionOutcome {
+	for d, p := range suggestionOutcomeToProtoMap {
+		if p == o {
+			return d
+		}
+	}
+	return domain.SuggestionUnspecified
+}
+
+func suggestionToProto(s domain.ReviewSuggestion) *corev1.ReviewSuggestion {
+	rounds := make([]*corev1.SuggestionRound, len(s.Rounds))
+	for i, r := range s.Rounds {
+		rounds[i] = &corev1.SuggestionRound{
+			Seq: int32(r.Seq), Side: reviewSideToProto(r.Side), UserId: r.UserID.String(), Text: r.Text,
+			CreatedAt: timestamppb.New(r.CreatedAt),
+		}
+	}
+	out := &corev1.ReviewSuggestion{
+		Text: s.Text(), Turn: reviewSideToProto(s.Turn()), Rounds: rounds,
+		Outcome: suggestionOutcomeToProtoMap[s.Outcome], Reason: s.Reason, ClosedText: s.ClosedText,
+	}
+	if !s.Open() {
+		out.ClosedBy = s.ClosedBy.String()
+		out.ClosedAt = timestamppb.New(s.ClosedAt)
+	}
+	return out
 }
 
 func reviewSideFromProto(s corev1.ReviewSide) domain.ReviewSide {
@@ -78,8 +132,15 @@ func reviewErr(ctx context.Context, op string, err error) error {
 	case errors.Is(err, domain.ErrReviewBlankBody), errors.Is(err, domain.ErrReviewBodyTooLong),
 		errors.Is(err, domain.ErrReviewBlankQuote), errors.Is(err, domain.ErrReviewQuoteTooLong),
 		errors.Is(err, domain.ErrReviewBadOccurrence), errors.Is(err, domain.ErrReviewNoApprover),
-		errors.Is(err, domain.ErrReviewBadSide):
+		errors.Is(err, domain.ErrReviewBadSide), errors.Is(err, domain.ErrSuggestionBlank),
+		errors.Is(err, domain.ErrSuggestionTooLong), errors.Is(err, domain.ErrSuggestionBadOutcome),
+		errors.Is(err, domain.ErrSuggestionReasonRequired):
 		return status.Error(codes.InvalidArgument, err.Error())
+	case errors.Is(err, domain.ErrSuggestionNone), errors.Is(err, domain.ErrSuggestionClosed),
+		errors.Is(err, domain.ErrSuggestionNotYourTurn), errors.Is(err, domain.ErrSuggestionOutcomeNotYours),
+		errors.Is(err, store.ErrSuggestionMissing), errors.Is(err, store.ErrSuggestionEnded),
+		errors.Is(err, store.ErrSuggestionChanged):
+		return status.Error(codes.FailedPrecondition, err.Error())
 	case errors.Is(err, domain.ErrReviewNotApprover), errors.Is(err, domain.ErrReviewNotStarter):
 		return status.Error(codes.PermissionDenied, err.Error())
 	case errors.Is(err, store.ErrReviewThreadNotFound), errors.Is(err, store.ErrReviewVersionNotFound):
@@ -93,15 +154,25 @@ func reviewErr(ctx context.Context, op string, err error) error {
 // only, never a comment or the quoted text. A failed emit is logged and does
 // not undo the write.
 func (h *ReviewHandler) audited(ctx context.Context, action, actor string, side corev1.ReviewSide, t domain.ReviewThread) {
+	h.auditedWith(ctx, action, actor, side, t, nil)
+}
+
+// auditedWith is audited plus extra attributes, which must be ids, counts or
+// outcome names, never user text.
+func (h *ReviewHandler) auditedWith(ctx context.Context, action, actor string, side corev1.ReviewSide, t domain.ReviewThread, extra map[string]string) {
 	if h.auditor == nil {
 		return
 	}
+	attrs := map[string]string{
+		"thread_id": t.ID.String(), "policy_version_id": t.PolicyVersionID.String(),
+		"approver_user_id": t.ApproverUserID.String(), "actor_side": side.String(), "outcome": "ok",
+	}
+	for k, v := range extra {
+		attrs[k] = v
+	}
 	err := h.auditor.Emit(ctx, audit.Event{
 		Tier: audit.TierActivity, Action: action, ActorUserID: actor, Subject: "review_thread:" + t.ID.String(),
-		Attributes: map[string]string{
-			"thread_id": t.ID.String(), "policy_version_id": t.PolicyVersionID.String(),
-			"approver_user_id": t.ApproverUserID.String(), "actor_side": side.String(), "outcome": "ok",
-		},
+		Attributes: attrs,
 	})
 	if err != nil {
 		logger.Ctx(ctx).Error(err, "review audit failed", log.F("action", action), log.F("thread_id", t.ID.String()))
@@ -144,6 +215,12 @@ func (h *ReviewHandler) AddReviewThread(ctx context.Context, req *corev1.AddRevi
 		l.Debug("add review thread refused", log.F("policy_version_id", versionID.String()), log.F("reason", err.Error()))
 		return nil, reviewErr(ctx, "add_review_thread", err)
 	}
+	t, err = t.WithSuggestion(h.limits, side, actor, req.GetSuggestedText())
+	if err != nil {
+		l.Debug("add review thread refused: suggested text", log.F("policy_version_id", versionID.String()), log.F("reason", err.Error()))
+		return nil, reviewErr(ctx, "add_review_thread", err)
+	}
+	l.Debug("add review thread: suggestion decided", log.F("policy_version_id", versionID.String()), log.F("has_suggestion", t.Suggestion != nil))
 	saved, err := h.store.CreateThread(ctx, t)
 	if err != nil {
 		l.Error(err, "add review thread failed", log.F("policy_version_id", versionID.String()))
@@ -151,7 +228,8 @@ func (h *ReviewHandler) AddReviewThread(ctx context.Context, req *corev1.AddRevi
 	}
 	l.Info("review thread created", log.F("thread_id", saved.ID.String()), log.F("policy_version_id", versionID.String()),
 		log.F("approver", approver.String()), log.F("side", side))
-	h.audited(ctx, "review.thread.created", req.GetActorUserId(), req.GetActorSide(), saved)
+	h.auditedWith(ctx, "review.thread.created", req.GetActorUserId(), req.GetActorSide(), saved,
+		map[string]string{"has_suggestion": strconv.FormatBool(saved.Suggestion != nil)})
 	return &corev1.AddReviewThreadResponse{Thread: reviewThreadToProto(saved)}, nil
 }
 
@@ -269,4 +347,56 @@ func (h *ReviewHandler) DeleteReviewThread(ctx context.Context, req *corev1.Dele
 	l.Info("review thread deleted", log.F("thread_id", t.ID.String()), log.F("policy_version_id", t.PolicyVersionID.String()))
 	h.audited(ctx, "review.thread.deleted", req.GetActorUserId(), req.GetActorSide(), t)
 	return &corev1.DeleteReviewThreadResponse{}, nil
+}
+
+// CounterReviewSuggestion handles ReviewService.CounterReviewSuggestion. The
+// text of the counter is never logged or audited.
+func (h *ReviewHandler) CounterReviewSuggestion(ctx context.Context, req *corev1.CounterReviewSuggestionRequest) (*corev1.CounterReviewSuggestionResponse, error) {
+	l := logger.Ctx(ctx)
+	t, actor, side, err := h.loadForAct(ctx, "counter_review_suggestion", req.GetThreadId(), req.GetActorUserId(), req.GetActorSide(), canAct)
+	if err != nil {
+		return nil, err
+	}
+	round, err := t.Counter(h.limits, side, actor, req.GetText())
+	if err != nil {
+		l.Debug("counter refused", log.F("thread_id", t.ID.String()), log.F("actor", actor.String()), log.F("side", side), log.F("reason", err.Error()))
+		return nil, reviewErr(ctx, "counter_review_suggestion", err)
+	}
+	saved, err := h.store.AppendRound(ctx, t.ID, round)
+	if err != nil {
+		l.Warn("counter not stored", log.F("thread_id", t.ID.String()), log.F("round", round.Seq), log.F("reason", err.Error()))
+		return nil, reviewErr(ctx, "counter_review_suggestion", err)
+	}
+	l.Info("review suggestion countered", log.F("thread_id", t.ID.String()), log.F("round", round.Seq), log.F("side", side))
+	h.auditedWith(ctx, "review.suggestion.countered", req.GetActorUserId(), req.GetActorSide(), saved,
+		map[string]string{"round": strconv.Itoa(round.Seq)})
+	return &corev1.CounterReviewSuggestionResponse{Thread: reviewThreadToProto(saved)}, nil
+}
+
+// CloseReviewSuggestion handles ReviewService.CloseReviewSuggestion. It ends
+// the suggestion with one outcome and resolves the thread. The reason and the
+// text are never logged or audited.
+func (h *ReviewHandler) CloseReviewSuggestion(ctx context.Context, req *corev1.CloseReviewSuggestionRequest) (*corev1.CloseReviewSuggestionResponse, error) {
+	l := logger.Ctx(ctx)
+	t, actor, side, err := h.loadForAct(ctx, "close_review_suggestion", req.GetThreadId(), req.GetActorUserId(), req.GetActorSide(), canAct)
+	if err != nil {
+		return nil, err
+	}
+	outcome := suggestionOutcomeFromProto(req.GetOutcome())
+	c, err := t.CloseSuggestion(h.limits, side, actor, outcome, req.GetReason())
+	if err != nil {
+		l.Debug("close suggestion refused", log.F("thread_id", t.ID.String()), log.F("actor", actor.String()), log.F("side", side),
+			log.F("outcome", outcome.String()), log.F("reason", err.Error()))
+		return nil, reviewErr(ctx, "close_review_suggestion", err)
+	}
+	saved, err := h.store.CloseSuggestion(ctx, t.ID, c)
+	if err != nil {
+		l.Warn("close suggestion not stored", log.F("thread_id", t.ID.String()), log.F("outcome", outcome.String()), log.F("reason", err.Error()))
+		return nil, reviewErr(ctx, "close_review_suggestion", err)
+	}
+	l.Info("review suggestion closed", log.F("thread_id", t.ID.String()), log.F("outcome", outcome.String()), log.F("side", side),
+		log.F("rounds", c.Rounds))
+	h.auditedWith(ctx, "review.suggestion.closed", req.GetActorUserId(), req.GetActorSide(), saved,
+		map[string]string{"suggestion_outcome": outcome.String(), "rounds": strconv.Itoa(c.Rounds)})
+	return &corev1.CloseReviewSuggestionResponse{Thread: reviewThreadToProto(saved)}, nil
 }
