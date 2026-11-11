@@ -56,6 +56,10 @@ type Config struct {
 
 	S3  S3
 	TLS TLS
+	// ReviewBodyMaxChars and ReviewQuoteMaxChars cap a review comment and the
+	// text a thread quotes, in characters.
+	ReviewBodyMaxChars  int
+	ReviewQuoteMaxChars int
 	// WorkloadAuth verifies the callers' workload tokens. It is set when
 	// WorkloadAuthEnabled; WORKLOAD_AUTH=disabled is the only way to turn it
 	// off.
@@ -90,6 +94,12 @@ func Load(getenv func(string) string) (Config, error) {
 
 	var errs []error
 	var err error
+	if c.ReviewBodyMaxChars, err = positiveInt(or("REVIEW_BODY_MAX_CHARS", "10000")); err != nil {
+		errs = append(errs, errors.New("REVIEW_BODY_MAX_CHARS must be a positive whole number"))
+	}
+	if c.ReviewQuoteMaxChars, err = positiveInt(or("REVIEW_QUOTE_MAX_CHARS", "4000")); err != nil {
+		errs = append(errs, errors.New("REVIEW_QUOTE_MAX_CHARS must be a positive whole number"))
+	}
 	if c.WorkloadAuth, c.WorkloadAuthEnabled, err = serverWorkloadConfig(getenv); err != nil {
 		errs = append(errs, err)
 	}
@@ -122,4 +132,13 @@ func Load(getenv func(string) string) (Config, error) {
 		errs = append(errs, errors.New("GRPC_TLS_CERT_FILE, GRPC_TLS_KEY_FILE and GRPC_TLS_CLIENT_CA_FILE are set together"))
 	}
 	return c, errors.Join(errs...)
+}
+
+// positiveInt parses a whole number above zero.
+func positiveInt(v string) (int, error) {
+	n, err := strconv.Atoi(v)
+	if err != nil || n <= 0 {
+		return 0, errors.New("not a positive whole number")
+	}
+	return n, nil
 }

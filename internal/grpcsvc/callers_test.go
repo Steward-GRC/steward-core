@@ -21,7 +21,7 @@ var coreServices = []grpc.ServiceDesc{
 	corev1.CategoryService_ServiceDesc, corev1.TemplateService_ServiceDesc, corev1.PolicyService_ServiceDesc,
 	corev1.SettingsService_ServiceDesc, corev1.AppendixService_ServiceDesc, corev1.RelationService_ServiceDesc,
 	corev1.ContactService_ServiceDesc, corev1.ReferenceService_ServiceDesc, corev1.DefinitionLibraryService_ServiceDesc,
-	corev1.EmailServiceSecretService_ServiceDesc, corev1.AssetService_ServiceDesc,
+	corev1.EmailServiceSecretService_ServiceDesc, corev1.AssetService_ServiceDesc, corev1.ReviewService_ServiceDesc,
 }
 
 func allMethods() []string {

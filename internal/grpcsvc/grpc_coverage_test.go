@@ -72,6 +72,11 @@ func TestEveryGRPCRPCIsImplemented(t *testing.T) {
 			srv:     reflect.ValueOf(corev1.RelationServiceServer(&RelationHandler{})),
 		},
 		{
+			service: "ReviewService",
+			ifaceT:  reflect.TypeFor[corev1.ReviewServiceServer](),
+			srv:     reflect.ValueOf(corev1.ReviewServiceServer(&ReviewHandler{})),
+		},
+		{
 			service: "TemplateService",
 			ifaceT:  reflect.TypeFor[corev1.TemplateServiceServer](),
 			srv:     reflect.ValueOf(corev1.TemplateServiceServer(&TemplateHandler{})),
