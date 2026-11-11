@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	corev1 "github.com/Steward-GRC/steward-core/gen/go/steward/core/v1"
 	"github.com/Steward-GRC/steward-core/internal/audit"
@@ -34,6 +35,7 @@ type fakePolicyAppendixBackend struct {
 	gotTitle   string
 	gotContent string
 	gotRetired bool
+	gotOrder   []uuid.UUID
 	calls      int
 }
 
@@ -71,6 +73,12 @@ func (f *fakePolicyAppendixBackend) Restore(_ context.Context, id uuid.UUID) (do
 	f.calls++
 	f.gotID = id
 	return f.result, f.changed, f.err
+}
+
+func (f *fakePolicyAppendixBackend) ReorderAppendices(_ context.Context, policy uuid.UUID, ids []uuid.UUID) ([]domain.PolicyAppendix, error) {
+	f.calls++
+	f.gotPolicy, f.gotOrder = policy, ids
+	return f.list, f.err
 }
 
 type appendixFixture struct {
@@ -375,5 +383,82 @@ func TestPolicyAppendixHandler_NoAuditorIsFine(t *testing.T) {
 	f := newAppendixFixture()
 	h := grpcsvc.NewPolicyAppendixHandler(f.b, nil)
 	_, err := h.PublishAppendix(context.Background(), &corev1.PublishAppendixRequest{Id: f.id.String(), ActorUserId: f.bob.String()})
+	require.NoError(t, err)
+}
+
+// appendices.test.ts "order" / "reorders the appendices and re-letters them".
+func TestPolicyAppendixHandler_ReorderReturnsTheNewOrderAndAudits(t *testing.T) {
+	f := newAppendixFixture()
+	second := f.appendix()
+	second.ID, second.Letter, second.OrderIndex = uuid.New(), "A", 0
+	f.b.list = []domain.PolicyAppendix{second, f.appendix()}
+	resp, err := f.h.ReorderPolicyAppendices(context.Background(), &corev1.ReorderPolicyAppendicesRequest{
+		PolicyId: f.policy.String(), OrderedIds: []string{second.ID.String(), f.id.String()}, ActorUserId: f.bob.String(),
+	})
+	require.NoError(t, err)
+	require.Equal(t, f.policy, f.b.gotPolicy)
+	require.Equal(t, []uuid.UUID{second.ID, f.id}, f.b.gotOrder)
+	require.Len(t, resp.GetAppendices(), 2)
+	require.Equal(t, second.ID.String(), resp.GetAppendices()[0].GetId())
+	require.Equal(t, "A", resp.GetAppendices()[0].GetLetter())
+	require.Len(t, f.events(), 1)
+	ev := f.events()[0]
+	require.Equal(t, "appendix.reordered", ev.Action)
+	require.Equal(t, f.bob.String(), ev.ActorUserID)
+	require.Equal(t, "policy:"+f.policy.String(), ev.Subject)
+	require.Equal(t, "2", ev.Attributes["appendix_count"])
+}
+
+// appendices.test.ts "makes no draft on a reorder, a retire or a restore": the
+// handler only reorders, it never saves or publishes.
+func TestPolicyAppendixHandler_ReorderTouchesNoVersions(t *testing.T) {
+	f := newAppendixFixture()
+	_, err := f.h.ReorderPolicyAppendices(context.Background(), &corev1.ReorderPolicyAppendicesRequest{
+		PolicyId: f.policy.String(), ActorUserId: f.bob.String(),
+	})
+	require.NoError(t, err)
+	require.Equal(t, 1, f.b.calls)
+}
+
+func TestPolicyAppendixHandler_ReorderRefusesBadInput(t *testing.T) {
+	f := newAppendixFixture()
+	ctx := context.Background()
+	good := uuid.NewString()
+	for name, req := range map[string]*corev1.ReorderPolicyAppendicesRequest{
+		"bad policy": {PolicyId: "x", ActorUserId: f.bob.String()},
+		"bad actor":  {PolicyId: good, ActorUserId: "x"},
+		"bad id":     {PolicyId: good, OrderedIds: []string{good, "x"}, ActorUserId: f.bob.String()},
+	} {
+		_, err := f.h.ReorderPolicyAppendices(ctx, req)
+		require.Equal(t, codes.InvalidArgument, status.Code(err), name)
+	}
+	require.Zero(t, f.b.calls)
+	require.Empty(t, f.events())
+}
+
+func TestPolicyAppendixHandler_ReorderMapsStoreErrorsAndAuditsNothing(t *testing.T) {
+	f := newAppendixFixture()
+	req := &corev1.ReorderPolicyAppendicesRequest{PolicyId: f.policy.String(), ActorUserId: f.bob.String()}
+	for err, want := range map[error]codes.Code{
+		store.ErrAppendixReorderMismatch: codes.InvalidArgument,
+		store.ErrAppendixPolicyNotFound:  codes.NotFound,
+	} {
+		f.b.err = err
+		_, got := f.h.ReorderPolicyAppendices(context.Background(), req)
+		require.Equal(t, want, status.Code(got), err.Error())
+	}
+	f.b.err = errors.New("dial tcp core-pg:5432: connect: connection refused")
+	_, got := f.h.ReorderPolicyAppendices(context.Background(), req)
+	requireStoreUnavailable(t, got, "reorder_policy_appendices")
+	require.NotContains(t, got.Error(), "connection refused")
+	require.Empty(t, f.events())
+}
+
+func TestPolicyAppendixHandler_ReorderAuditFailureDoesNotUndoIt(t *testing.T) {
+	f := newAppendixFixture()
+	f.audit.err = errors.New("audit down")
+	_, err := f.h.ReorderPolicyAppendices(context.Background(), &corev1.ReorderPolicyAppendicesRequest{
+		PolicyId: f.policy.String(), ActorUserId: f.bob.String(),
+	})
 	require.NoError(t, err)
 }

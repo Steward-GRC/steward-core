@@ -22,13 +22,14 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	PolicyAppendixService_ListPolicyAppendices_FullMethodName = "/steward.core.v1.PolicyAppendixService/ListPolicyAppendices"
-	PolicyAppendixService_GetPolicyAppendix_FullMethodName    = "/steward.core.v1.PolicyAppendixService/GetPolicyAppendix"
-	PolicyAppendixService_CreatePolicyAppendix_FullMethodName = "/steward.core.v1.PolicyAppendixService/CreatePolicyAppendix"
-	PolicyAppendixService_SaveAppendixDraft_FullMethodName    = "/steward.core.v1.PolicyAppendixService/SaveAppendixDraft"
-	PolicyAppendixService_PublishAppendix_FullMethodName      = "/steward.core.v1.PolicyAppendixService/PublishAppendix"
-	PolicyAppendixService_RetireAppendix_FullMethodName       = "/steward.core.v1.PolicyAppendixService/RetireAppendix"
-	PolicyAppendixService_RestoreAppendix_FullMethodName      = "/steward.core.v1.PolicyAppendixService/RestoreAppendix"
+	PolicyAppendixService_ListPolicyAppendices_FullMethodName    = "/steward.core.v1.PolicyAppendixService/ListPolicyAppendices"
+	PolicyAppendixService_GetPolicyAppendix_FullMethodName       = "/steward.core.v1.PolicyAppendixService/GetPolicyAppendix"
+	PolicyAppendixService_CreatePolicyAppendix_FullMethodName    = "/steward.core.v1.PolicyAppendixService/CreatePolicyAppendix"
+	PolicyAppendixService_SaveAppendixDraft_FullMethodName       = "/steward.core.v1.PolicyAppendixService/SaveAppendixDraft"
+	PolicyAppendixService_PublishAppendix_FullMethodName         = "/steward.core.v1.PolicyAppendixService/PublishAppendix"
+	PolicyAppendixService_RetireAppendix_FullMethodName          = "/steward.core.v1.PolicyAppendixService/RetireAppendix"
+	PolicyAppendixService_RestoreAppendix_FullMethodName         = "/steward.core.v1.PolicyAppendixService/RestoreAppendix"
+	PolicyAppendixService_ReorderPolicyAppendices_FullMethodName = "/steward.core.v1.PolicyAppendixService/ReorderPolicyAppendices"
 )
 
 // PolicyAppendixServiceClient is the client API for PolicyAppendixService service.
@@ -44,6 +45,7 @@ type PolicyAppendixServiceClient interface {
 	PublishAppendix(ctx context.Context, in *PublishAppendixRequest, opts ...grpc.CallOption) (*PublishAppendixResponse, error)
 	RetireAppendix(ctx context.Context, in *RetireAppendixRequest, opts ...grpc.CallOption) (*RetireAppendixResponse, error)
 	RestoreAppendix(ctx context.Context, in *RestoreAppendixRequest, opts ...grpc.CallOption) (*RestoreAppendixResponse, error)
+	ReorderPolicyAppendices(ctx context.Context, in *ReorderPolicyAppendicesRequest, opts ...grpc.CallOption) (*ReorderPolicyAppendicesResponse, error)
 }
 
 type policyAppendixServiceClient struct {
@@ -124,6 +126,16 @@ func (c *policyAppendixServiceClient) RestoreAppendix(ctx context.Context, in *R
 	return out, nil
 }
 
+func (c *policyAppendixServiceClient) ReorderPolicyAppendices(ctx context.Context, in *ReorderPolicyAppendicesRequest, opts ...grpc.CallOption) (*ReorderPolicyAppendicesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ReorderPolicyAppendicesResponse)
+	err := c.cc.Invoke(ctx, PolicyAppendixService_ReorderPolicyAppendices_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // PolicyAppendixServiceServer is the server API for PolicyAppendixService service.
 // All implementations must embed UnimplementedPolicyAppendixServiceServer
 // for forward compatibility.
@@ -137,6 +149,7 @@ type PolicyAppendixServiceServer interface {
 	PublishAppendix(context.Context, *PublishAppendixRequest) (*PublishAppendixResponse, error)
 	RetireAppendix(context.Context, *RetireAppendixRequest) (*RetireAppendixResponse, error)
 	RestoreAppendix(context.Context, *RestoreAppendixRequest) (*RestoreAppendixResponse, error)
+	ReorderPolicyAppendices(context.Context, *ReorderPolicyAppendicesRequest) (*ReorderPolicyAppendicesResponse, error)
 	mustEmbedUnimplementedPolicyAppendixServiceServer()
 }
 
@@ -167,6 +180,9 @@ func (UnimplementedPolicyAppendixServiceServer) RetireAppendix(context.Context, 
 }
 func (UnimplementedPolicyAppendixServiceServer) RestoreAppendix(context.Context, *RestoreAppendixRequest) (*RestoreAppendixResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method RestoreAppendix not implemented")
+}
+func (UnimplementedPolicyAppendixServiceServer) ReorderPolicyAppendices(context.Context, *ReorderPolicyAppendicesRequest) (*ReorderPolicyAppendicesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ReorderPolicyAppendices not implemented")
 }
 func (UnimplementedPolicyAppendixServiceServer) mustEmbedUnimplementedPolicyAppendixServiceServer() {}
 func (UnimplementedPolicyAppendixServiceServer) testEmbeddedByValue()                               {}
@@ -315,6 +331,24 @@ func _PolicyAppendixService_RestoreAppendix_Handler(srv interface{}, ctx context
 	return interceptor(ctx, in, info, handler)
 }
 
+func _PolicyAppendixService_ReorderPolicyAppendices_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReorderPolicyAppendicesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PolicyAppendixServiceServer).ReorderPolicyAppendices(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PolicyAppendixService_ReorderPolicyAppendices_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PolicyAppendixServiceServer).ReorderPolicyAppendices(ctx, req.(*ReorderPolicyAppendicesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // PolicyAppendixService_ServiceDesc is the grpc.ServiceDesc for PolicyAppendixService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -349,6 +383,10 @@ var PolicyAppendixService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RestoreAppendix",
 			Handler:    _PolicyAppendixService_RestoreAppendix_Handler,
+		},
+		{
+			MethodName: "ReorderPolicyAppendices",
+			Handler:    _PolicyAppendixService_ReorderPolicyAppendices_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

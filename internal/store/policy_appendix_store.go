@@ -28,6 +28,8 @@ var (
 	ErrAppendixNoDraft = errors.New("appendix has no draft to publish")
 	// ErrAppendixRetired is returned when saving or publishing a retired appendix.
 	ErrAppendixRetired = errors.New("appendix is retired; restore it first")
+	// ErrAppendixReorderMismatch is returned when a reorder list is not every live appendix of the policy exactly once.
+	ErrAppendixReorderMismatch = errors.New("ordered ids must name every live appendix of the policy exactly once")
 )
 
 // PolicyAppendixStore persists the appendices a policy owns, each with its own
@@ -350,4 +352,59 @@ func (s *PolicyAppendixStore) Restore(ctx context.Context, id uuid.UUID) (domain
 		return domain.PolicyAppendix{}, false, err
 	}
 	return a, changed, nil
+}
+
+// ReorderAppendices sets the order of a policy's live appendices from their
+// place in orderedIDs, which must hold every live appendix exactly once; a
+// missing, repeated, foreign, retired or unknown id is
+// ErrAppendixReorderMismatch and nothing changes. An unknown policy is
+// ErrAppendixPolicyNotFound. It runs under the policy lock like every other
+// write, leaves retired appendices and every version row alone, and returns
+// the live appendices in the new order.
+func (s *PolicyAppendixStore) ReorderAppendices(ctx context.Context, policyID uuid.UUID, orderedIDs []uuid.UUID) ([]domain.PolicyAppendix, error) {
+	err := s.db.RunInTx(ctx, func(tx pgx.Tx) error {
+		if err := lockPolicy(ctx, tx, policyID); err != nil {
+			return err
+		}
+		all, err := loadPolicyAppendices(ctx, tx, policyID)
+		if err != nil {
+			return err
+		}
+		live := make(map[uuid.UUID]struct{}, len(all))
+		for _, a := range all {
+			if a.Live() {
+				live[a.ID] = struct{}{}
+			}
+		}
+		if len(orderedIDs) != len(live) {
+			return fmt.Errorf("%d ids for %d live appendices: %w", len(orderedIDs), len(live), ErrAppendixReorderMismatch)
+		}
+		seen := make(map[uuid.UUID]struct{}, len(orderedIDs))
+		for _, id := range orderedIDs {
+			if _, ok := live[id]; !ok {
+				return fmt.Errorf("%s is not a live appendix of the policy: %w", id, ErrAppendixReorderMismatch)
+			}
+			if _, dup := seen[id]; dup {
+				return fmt.Errorf("%s listed twice: %w", id, ErrAppendixReorderMismatch)
+			}
+			seen[id] = struct{}{}
+		}
+		// Park the rows at a high offset first so no step collides with the
+		// live-order unique index, then set the final places.
+		for i, id := range orderedIDs {
+			if _, err := tx.Exec(ctx, `UPDATE policy_owned_appendices SET order_index=$2 WHERE id=$1`, id, 10000+i); err != nil {
+				return err
+			}
+		}
+		for i, id := range orderedIDs {
+			if _, err := tx.Exec(ctx, `UPDATE policy_owned_appendices SET order_index=$2 WHERE id=$1`, id, i); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return s.List(ctx, policyID, false)
 }
