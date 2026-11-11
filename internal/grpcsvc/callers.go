@@ -61,6 +61,7 @@ var (
 	collabMethods = []string{
 		corev1.CategoryService_GetCategory_FullMethodName,
 		corev1.PolicyService_GetPolicy_FullMethodName,
+		corev1.PolicyAppendixService_GetPolicyAppendix_FullMethodName,
 	}
 	// identityMethods serve the account merge (re-own policies, label the
 	// acknowledgements it moves) and the delete check and preview (owned
