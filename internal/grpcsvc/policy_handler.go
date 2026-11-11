@@ -158,6 +158,10 @@ func policyVersionStatusToProto(s domain.PolicyVersionStatus) corev1.PolicyVersi
 	switch s {
 	case domain.PolicyVersionStatusDraft:
 		return corev1.PolicyVersionStatus_POLICY_VERSION_STATUS_DRAFT
+	case domain.PolicyVersionStatusInReview:
+		return corev1.PolicyVersionStatus_POLICY_VERSION_STATUS_IN_REVIEW
+	case domain.PolicyVersionStatusRejected:
+		return corev1.PolicyVersionStatus_POLICY_VERSION_STATUS_REJECTED
 	case domain.PolicyVersionStatusPublished:
 		return corev1.PolicyVersionStatus_POLICY_VERSION_STATUS_PUBLISHED
 	case domain.PolicyVersionStatusSuperseded:
@@ -464,6 +468,8 @@ func (h *PolicyHandler) SaveDraft(ctx context.Context, req *corev1.SaveDraftRequ
 		}
 		return nil, status.Errorf(codes.Internal, "upsert draft: %v", err)
 	}
+	logger.Ctx(ctx).Debug("draft saved", log.F("policy_id", pid.String()), log.F("version_id", pv.ID.String()),
+		log.F("status", string(pv.Status)), log.F("inserted", res.Inserted), log.F("content_changed", res.ContentChanged))
 	// A new draft starts with a copy of the published version's appendices.
 	if res.Inserted && h.appendixCopier != nil {
 		if pol, gerr := h.store.GetPolicy(ctx, pid); gerr == nil && pol.CurrentPublishedVersionID != uuid.Nil {
@@ -995,7 +1001,7 @@ func (h *PolicyHandler) SetVersionStatus(ctx context.Context, req *corev1.SetVer
 	target := domain.PolicyVersionStatus(req.GetStatus())
 	if !domain.IsValidPolicyVersionStatus(target) {
 		return nil, status.Errorf(codes.InvalidArgument,
-			"status %q is not a stored policy-version status (want draft/published/superseded/archived)", req.GetStatus())
+			"status %q is not a stored policy-version status (want draft/in_review/rejected/published/superseded/archived)", req.GetStatus())
 	}
 
 	// Validate the transition before touching the store.
@@ -1008,8 +1014,19 @@ func (h *PolicyHandler) SetVersionStatus(ctx context.Context, req *corev1.SetVer
 		return nil, status.Error(codes.Internal, "get policy version failed")
 	}
 	if err := domain.ValidateVersionStatusTransition(cur.Status, target); err != nil {
+		logger.Ctx(ctx).Debug("set version status refused: illegal transition",
+			log.F("version_id", pvID.String()), log.F("from", string(cur.Status)), log.F("to", string(target)))
 		return nil, status.Errorf(codes.FailedPrecondition, "%v", err)
 	}
+	// Moving into review is the submit: a version with no text goes nowhere. A repeat submit of a
+	// version already in review is a no-op and is not checked again.
+	if target == domain.PolicyVersionStatusInReview && cur.Status != domain.PolicyVersionStatusInReview &&
+		!validate.HasTextContent(cur.ContentJSON) {
+		logger.Ctx(ctx).Debug("submit refused: version holds no text", log.F("version_id", pvID.String()))
+		return nil, status.Error(codes.InvalidArgument, "submit refused: the document holds no text")
+	}
+	logger.Ctx(ctx).Debug("set version status",
+		log.F("version_id", pvID.String()), log.F("from", string(cur.Status)), log.F("to", string(target)))
 
 	pv, err := h.store.SetVersionStatus(ctx, pvID, target)
 	if err != nil {
@@ -1419,7 +1436,10 @@ func (h *PolicyHandler) UpdateDraftContent(ctx context.Context, req *corev1.Upda
 		logger.Ctx(ctx).Error(err, "get draft failed", log.F("draft_id", draftID.String()))
 		return nil, status.Error(codes.Internal, "get draft failed")
 	}
-	if pv.Status != domain.PolicyVersionStatusDraft {
+	// A version in review stays editable; a rejected one is final, so a late checkpoint is refused.
+	if !pv.Status.HoldsDraftSlot() {
+		logger.Ctx(ctx).Debug("draft checkpoint refused: version is not the working copy",
+			log.F("draft_id", draftID.String()), log.F("status", string(pv.Status)))
 		return nil, status.Errorf(codes.FailedPrecondition,
 			"policy version %s is not a draft (status=%s)", draftID, pv.Status)
 	}

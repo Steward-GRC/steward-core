@@ -260,13 +260,13 @@ func (s *PolicyStore) GetPolicy(ctx context.Context, id uuid.UUID) (domain.Polic
 	err := s.db.Querier().QueryRow(ctx,
 		`SELECT p.id, p.home_category_id, p.sequence, p.document_type, g.code, g.slug, p.title, p.sensitivity,
 		        p.template_id, p.template_none, p.current_published_version_id,
-		        (SELECT id FROM policy_versions WHERE policy_id = p.id AND status = 'draft' LIMIT 1),
+		        (SELECT id FROM policy_versions WHERE policy_id = p.id AND status IN ('draft','in_review') LIMIT 1),
 		        p.owner_user_id,
 		        p.ack_triggers, p.ack_audience_override, p.effective_date,
 		        p.created_at, p.updated_at, p.retired_at,
 		        cv.version_no, cv.status
 		   FROM policies p JOIN categories g ON g.id = p.home_category_id
-		   LEFT JOIN policy_versions cv ON cv.id = COALESCE(p.current_published_version_id, (SELECT id FROM policy_versions WHERE policy_id = p.id AND status = 'draft' LIMIT 1))
+		   LEFT JOIN policy_versions cv ON cv.id = COALESCE(p.current_published_version_id, (SELECT id FROM policy_versions WHERE policy_id = p.id AND status IN ('draft','in_review') LIMIT 1), (SELECT id FROM policy_versions WHERE policy_id = p.id AND status = 'rejected' ORDER BY created_at DESC, id DESC LIMIT 1))
 		  WHERE p.id = $1`, id,
 	).Scan(&p.ID, &p.HomeCategoryID, &p.Sequence, &docType, &categoryCode, &categorySlug, &p.Title, &sensitivity,
 		&templateID, &p.TemplateNone, &currentPubVID,
@@ -365,28 +365,28 @@ func (s *PolicyStore) ListPolicies(ctx context.Context, categoryID uuid.UUID, in
 		         )
 		         SELECT p.id, p.home_category_id, p.sequence, p.document_type, hg.code, hg.slug, p.title, p.sensitivity,
 		                p.template_id, p.template_none, p.current_published_version_id,
-		                (SELECT pv.id FROM policy_versions pv WHERE pv.policy_id = p.id AND pv.status = 'draft' LIMIT 1),
+		                (SELECT pv.id FROM policy_versions pv WHERE pv.policy_id = p.id AND pv.status IN ('draft','in_review') LIMIT 1),
 		                p.owner_user_id,
 		                p.ack_triggers, p.ack_audience_override,
 		                p.created_at, p.updated_at,
 		                cv.version_no, cv.status
 		           FROM policies p
 		           JOIN categories hg ON hg.id = p.home_category_id
-		           LEFT JOIN policy_versions cv ON cv.id = COALESCE(p.current_published_version_id, (SELECT id FROM policy_versions WHERE policy_id = p.id AND status = 'draft' LIMIT 1))
+		           LEFT JOIN policy_versions cv ON cv.id = COALESCE(p.current_published_version_id, (SELECT id FROM policy_versions WHERE policy_id = p.id AND status IN ('draft','in_review') LIMIT 1), (SELECT id FROM policy_versions WHERE policy_id = p.id AND status = 'rejected' ORDER BY created_at DESC, id DESC LIMIT 1))
 		          WHERE p.home_category_id IN (SELECT id FROM grp)
 		            AND p.retired_at IS NULL
 		            AND p.document_type = $2`
 	} else {
 		query = `SELECT p.id, p.home_category_id, p.sequence, p.document_type, hg.code, hg.slug, p.title, p.sensitivity,
 		                p.template_id, p.template_none, p.current_published_version_id,
-		                (SELECT pv.id FROM policy_versions pv WHERE pv.policy_id = p.id AND pv.status = 'draft' LIMIT 1),
+		                (SELECT pv.id FROM policy_versions pv WHERE pv.policy_id = p.id AND pv.status IN ('draft','in_review') LIMIT 1),
 		                p.owner_user_id,
 		                p.ack_triggers, p.ack_audience_override,
 		                p.created_at, p.updated_at,
 		                cv.version_no, cv.status
 		           FROM policies p
 		           JOIN categories hg ON hg.id = p.home_category_id
-		           LEFT JOIN policy_versions cv ON cv.id = COALESCE(p.current_published_version_id, (SELECT id FROM policy_versions WHERE policy_id = p.id AND status = 'draft' LIMIT 1))
+		           LEFT JOIN policy_versions cv ON cv.id = COALESCE(p.current_published_version_id, (SELECT id FROM policy_versions WHERE policy_id = p.id AND status IN ('draft','in_review') LIMIT 1), (SELECT id FROM policy_versions WHERE policy_id = p.id AND status = 'rejected' ORDER BY created_at DESC, id DESC LIMIT 1))
 		          WHERE p.home_category_id = $1
 		            AND p.retired_at IS NULL
 		            AND p.document_type = $2`
@@ -462,49 +462,57 @@ type UpsertDraftResult struct {
 	ContentChanged bool
 }
 
-// UpsertDraft creates the policy's draft or updates it in place.
+// UpsertDraft saves into the policy's working copy: it updates the draft, or the
+// version in review, in place, and otherwise inserts a new draft. A rejected
+// version holds no slot, so the next save after a rejection is a new row.
 func (s *PolicyStore) UpsertDraft(ctx context.Context, pv domain.PolicyVersion) (domain.PolicyVersion, UpsertDraftResult, error) {
 	var tvPtr *uuid.UUID
 	if pv.TemplateVersionID != uuid.Nil {
 		tvPtr = &pv.TemplateVersionID
 	}
-	var res UpsertDraftResult
+	var (
+		res       UpsertDraftResult
+		statusOut string
+	)
 	// The prev CTE reads the draft before the upsert, so RETURNING can report
 	// whether the content changed; with no prior row it compares to NULL and
 	// reports a change.
 	err := s.db.Querier().QueryRow(ctx,
 		`WITH prev AS (
 		     SELECT content AS c FROM policy_versions
-		      WHERE policy_id = $2 AND status = 'draft'
+		      WHERE policy_id = $2 AND status IN ('draft', 'in_review')
 		 )
 		 INSERT INTO policy_versions
 		     (id, policy_id, version_no, status, template_version_id, content, created_by)
 		 VALUES ($1, $2, 0, 'draft', $3, $4::jsonb, $5)
-		 ON CONFLICT (policy_id) WHERE status = 'draft'
+		 ON CONFLICT (policy_id) WHERE status IN ('draft', 'in_review')
 		 DO UPDATE SET
 		     template_version_id = EXCLUDED.template_version_id,
 		     content             = EXCLUDED.content,
 		     created_at          = now()
-		 RETURNING id, version_no, created_at,
+		 RETURNING id, version_no, created_at, status,
 		     (xmax = 0) AS inserted,
 		     ((xmax = 0) OR content IS DISTINCT FROM (SELECT c FROM prev)) AS changed`,
 		pv.ID, pv.PolicyID, tvPtr, pv.ContentJSON, pv.CreatedBy,
-	).Scan(&pv.ID, &pv.VersionNo, &pv.CreatedAt, &res.Inserted, &res.ContentChanged)
+	).Scan(&pv.ID, &pv.VersionNo, &pv.CreatedAt, &statusOut, &res.Inserted, &res.ContentChanged)
 	if err != nil {
 		return domain.PolicyVersion{}, UpsertDraftResult{}, fmt.Errorf("PolicyStore.UpsertDraft: %w", err)
 	}
-	pv.Status = domain.PolicyVersionStatusDraft
+	// An update lands on the existing working copy, which stays in review when it was submitted.
+	pv.Status = domain.PolicyVersionStatus(statusOut)
 	return pv, res, nil
 }
 
-// UpdateDraftContent overwrites a draft version's content. The caller has
-// already validated it against the pinned template version. It fails when the
-// version is missing or isn't a draft: published versions are immutable.
+// UpdateDraftContent overwrites the content of the policy's working copy: a
+// draft, or a version in review (the author keeps editing while approvers
+// review, as in the mock). The caller has already validated it against the
+// pinned template version. It fails when the version is missing or is anything
+// else: published and rejected versions are final.
 func (s *PolicyStore) UpdateDraftContent(ctx context.Context, policyVersionID uuid.UUID, contentJSON string) error {
 	tag, err := s.db.Querier().Exec(ctx,
 		`UPDATE policy_versions
 		    SET content = $2::jsonb
-		  WHERE id = $1 AND status = 'draft'`,
+		  WHERE id = $1 AND status IN ('draft', 'in_review')`,
 		policyVersionID, contentJSON,
 	)
 	if err != nil {
@@ -521,7 +529,7 @@ func (s *PolicyStore) UpdateDraftContent(ctx context.Context, policyVersionID uu
 func (s *PolicyStore) DiscardDraft(ctx context.Context, policyID uuid.UUID) error {
 	tag, err := s.db.Querier().Exec(ctx,
 		`DELETE FROM policy_versions
-		  WHERE policy_id = $1 AND status = 'draft'`,
+		  WHERE policy_id = $1 AND status IN ('draft', 'in_review')`,
 		policyID,
 	)
 	if err != nil {
@@ -604,7 +612,7 @@ func (s *PolicyStore) PublishDraft(ctx context.Context, policyID, actorUserID uu
 		var draftID uuid.UUID
 		err = tx.QueryRow(ctx,
 			`SELECT id FROM policy_versions
-			  WHERE policy_id = $1 AND status = 'draft'`, policyID,
+			  WHERE policy_id = $1 AND status IN ('draft', 'in_review')`, policyID,
 		).Scan(&draftID)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
@@ -631,7 +639,8 @@ func (s *PolicyStore) PublishDraft(ctx context.Context, policyID, actorUserID uu
 // it. Both publish paths, PublishDraft and workflow's SetVersionStatus, use
 // it, so they can't drift apart.
 func (s *PolicyStore) promoteDraftToPublished(ctx context.Context, tx pgx.Tx, policyID, versionID uuid.UUID) (domain.PolicyVersion, error) {
-	// Drafts hold version_no 0, so MAX over the rest gives the next number.
+	// Drafts, versions in review and rejected versions hold version_no 0, so MAX
+	// over the numbered rest gives the next number.
 	var prevPublishedID *uuid.UUID
 	var maxNonDraftVersionNo int
 	err := tx.QueryRow(ctx,
@@ -641,7 +650,7 @@ func (s *PolicyStore) promoteDraftToPublished(ctx context.Context, tx pgx.Tx, po
 		       ORDER BY version_no DESC LIMIT 1),
 		     COALESCE(
 		       (SELECT MAX(version_no) FROM policy_versions
-		         WHERE policy_id = $1 AND status <> 'draft'),
+		         WHERE policy_id = $1 AND status NOT IN ('draft', 'in_review', 'rejected')),
 		       0)`,
 		policyID,
 	).Scan(&prevPublishedID, &maxNonDraftVersionNo)
@@ -765,8 +774,8 @@ func (s *PolicyStore) SetVersionStatus(ctx context.Context, policyVersionID uuid
 
 		switch target {
 		case domain.PolicyVersionStatusPublished:
-			if current == domain.PolicyVersionStatusDraft {
-				// A draft sits at version_no 0, so it must be promoted like
+			if current.HoldsDraftSlot() {
+				// A draft, or a version in review, sits at version_no 0, so it must be promoted like
 				// PublishDraft does, or it would collide with the next draft.
 				if _, err := s.promoteDraftToPublished(ctx, tx, policyID, policyVersionID); err != nil {
 					return fmt.Errorf("PolicyStore.SetVersionStatus promote: %w", err)
@@ -883,13 +892,15 @@ func (s *PolicyStore) GetPolicyVersion(ctx context.Context, id uuid.UUID) (domai
 	return pv, nil
 }
 
-// ListPublishedVersions returns a policy's non-draft versions, oldest-first.
+// ListPublishedVersions returns a policy's numbered versions (published,
+// superseded, archived), oldest-first. Drafts, versions in review and rejected
+// versions are not part of the history.
 func (s *PolicyStore) ListPublishedVersions(ctx context.Context, policyID uuid.UUID) ([]domain.PolicyVersion, error) {
 	rows, err := s.db.Querier().Query(ctx,
 		`SELECT id, policy_id, version_no, status, template_version_id,
 		        content::text, created_at, published_at, created_by, supersedes_version_id
 		   FROM policy_versions
-		  WHERE policy_id = $1 AND status <> 'draft'
+		  WHERE policy_id = $1 AND status NOT IN ('draft', 'in_review', 'rejected')
 		  ORDER BY version_no ASC`, policyID)
 	if err != nil {
 		return nil, fmt.Errorf("PolicyStore.ListPublishedVersions: %w", err)

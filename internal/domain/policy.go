@@ -37,10 +37,19 @@ type PolicyVersionStatus string
 
 const (
 	PolicyVersionStatusDraft      PolicyVersionStatus = "draft"
+	PolicyVersionStatusInReview   PolicyVersionStatus = "in_review"
+	PolicyVersionStatusRejected   PolicyVersionStatus = "rejected"
 	PolicyVersionStatusPublished  PolicyVersionStatus = "published"
 	PolicyVersionStatusSuperseded PolicyVersionStatus = "superseded"
 	PolicyVersionStatusArchived   PolicyVersionStatus = "archived"
 )
+
+// HoldsDraftSlot reports whether a version in this status is the policy's one
+// working copy: a draft, or a draft submitted for review. A rejected version is
+// final and does not hold the slot, so the next save starts a new draft.
+func (s PolicyVersionStatus) HoldsDraftSlot() bool {
+	return s == PolicyVersionStatusDraft || s == PolicyVersionStatusInReview
+}
 
 type Policy struct {
 	ID             uuid.UUID
@@ -130,11 +139,12 @@ func NewPolicyVersionDraft(policyID, templateVersionID, createdBy uuid.UUID, con
 	}, nil
 }
 
-// IsValidPolicyVersionStatus reports whether s is one of the four stored
+// IsValidPolicyVersionStatus reports whether s is one of the six stored
 // policy-version statuses (matches the policy_version_status DB enum).
 func IsValidPolicyVersionStatus(s PolicyVersionStatus) bool {
 	switch s {
-	case PolicyVersionStatusDraft, PolicyVersionStatusPublished,
+	case PolicyVersionStatusDraft, PolicyVersionStatusInReview,
+		PolicyVersionStatusRejected, PolicyVersionStatusPublished,
 		PolicyVersionStatusSuperseded, PolicyVersionStatusArchived:
 		return true
 	default:
@@ -143,9 +153,16 @@ func IsValidPolicyVersionStatus(s PolicyVersionStatus) bool {
 }
 
 // versionStatusTransitions defines the legal stored-status changes for the core
-// version state machine. The approval lifecycle (in_review/approved/...) lives
-// in the Workflow service; here we only guard the four stored statuses.
+// version state machine. The per-stage approval states live in the Workflow
+// service; here we guard the stored statuses.
 //
+//   - draft → in_review   : submit for approval
+//   - draft → rejected    : a rejection written without a prior submit
+//   - in_review → draft   : the author withdraws the submission
+//   - in_review → published: approved
+//   - in_review → rejected : turned down; final, the next save is a new draft
+//   - in_review → archived : retire a version under review
+//   - rejected → archived : retire a rejected version
 //   - draft → published   : publish on approval
 //   - published → draft    : withdraw a published version back to working draft
 //   - published → superseded: a newer version was published
@@ -159,8 +176,19 @@ func IsValidPolicyVersionStatus(s PolicyVersionStatus) bool {
 // for not abusing it.
 var versionStatusTransitions = map[PolicyVersionStatus]map[PolicyVersionStatus]bool{
 	PolicyVersionStatusDraft: {
+		PolicyVersionStatusInReview:  true,
+		PolicyVersionStatusRejected:  true,
 		PolicyVersionStatusPublished: true,
 		PolicyVersionStatusArchived:  true,
+	},
+	PolicyVersionStatusInReview: {
+		PolicyVersionStatusDraft:     true, // withdraw
+		PolicyVersionStatusRejected:  true,
+		PolicyVersionStatusPublished: true,
+		PolicyVersionStatusArchived:  true,
+	},
+	PolicyVersionStatusRejected: {
+		PolicyVersionStatusArchived: true,
 	},
 	PolicyVersionStatusPublished: {
 		PolicyVersionStatusDraft:      true, // withdraw

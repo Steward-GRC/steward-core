@@ -16,6 +16,11 @@ enum PolicyVersionStatus {
   POLICY_VERSION_STATUS_PUBLISHED = 2;
   POLICY_VERSION_STATUS_SUPERSEDED = 3;
   POLICY_VERSION_STATUS_ARCHIVED = 4;
+  // Submitted for approval. The version keeps the draft slot and stays editable.
+  POLICY_VERSION_STATUS_IN_REVIEW = 5;
+  // Turned down by its approvers. Final: it stays stored as it was, is not the
+  // draft, and the author's next save starts a new draft.
+  POLICY_VERSION_STATUS_REJECTED = 6;
 }
 
 enum Sensitivity {
@@ -225,8 +230,10 @@ message RecordBreakGlassReadRequest {
 
 message RecordBreakGlassReadResponse {}
 
-// SetVersionStatusRequest writes a version's stored status: draft,
-// published, superseded or archived. The approval states live in workflow.
+// SetVersionStatusRequest writes a version's stored status: draft, in_review,
+// rejected, published, superseded or archived. Moving a version to in_review
+// is the submit: it is refused with INVALID_ARGUMENT while the version holds no
+// text. The per-stage approval states stay in workflow.
 message SetVersionStatusRequest {
   string policy_version_id = 1;
   string status = 2;
