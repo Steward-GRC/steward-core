@@ -24,6 +24,7 @@ import (
 // policyAppendixBackend is the part of *store.PolicyAppendixStore the handler uses.
 type policyAppendixBackend interface {
 	List(ctx context.Context, policyID uuid.UUID, includeRetired bool) ([]domain.PolicyAppendix, error)
+	Get(ctx context.Context, id uuid.UUID) (domain.PolicyAppendix, error)
 	Create(ctx context.Context, policyID, actor uuid.UUID, title, contentJSON string) (domain.PolicyAppendix, error)
 	SaveDraft(ctx context.Context, id, actor uuid.UUID, title, contentJSON string) (domain.PolicyAppendix, bool, error)
 	Publish(ctx context.Context, id, actor uuid.UUID) (domain.PolicyAppendix, error)
