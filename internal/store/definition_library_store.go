@@ -24,6 +24,15 @@ var ErrDefinitionEntryNotFound = errors.New("definition not found")
 // codes.FailedPrecondition so the user can archive instead.
 var ErrDefinitionEntryInUse = errors.New("definition is attached to one or more policies and cannot be deleted")
 
+// ErrDefinitionTermTaken is returned when a definition's title is already used
+// by another definition (compared ignoring case and surrounding spaces, across
+// every category, archived entries included). Callers map it to
+// codes.AlreadyExists.
+var ErrDefinitionTermTaken = errors.New("a definition with this title already exists")
+
+// definitionTermIndex is the unique index on the normalised title.
+const definitionTermIndex = "definitions_term_unique_idx"
+
 // DefinitionLibraryStore persists the category-scoped definitions library and
 // each document's attachments. Attachments are not versioned.
 type DefinitionLibraryStore struct{ db *postgres.DB }
@@ -78,12 +87,10 @@ func (s *DefinitionLibraryStore) ListDefinitionEntries(ctx context.Context, cate
 	}
 	rows, err := s.db.Querier().Query(ctx, `
 		SELECT d.id, d.category_id, d.term, d.definition, d.archived, d.created_by_user_id, d.created_at,
-		       COUNT(a.definition_id) AS used_by
+		       `+usedByDefinitions("d")+` AS used_by
 		FROM definitions d
-		LEFT JOIN policy_definition_attachments a ON a.definition_id = d.id
 		`+where+`
-		GROUP BY d.id
-		ORDER BY d.term`, args...)
+		ORDER BY lower(d.term), d.term`, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -110,12 +117,10 @@ func (s *DefinitionLibraryStore) ListPolicyDefinitionCandidates(ctx context.Cont
 		  JOIN chain c ON g.id = c.parent_id
 		)
 		SELECT d.id, d.category_id, d.term, d.definition, d.archived, d.created_by_user_id, d.created_at,
-		       COUNT(a.definition_id) AS used_by
+		       `+usedByDefinitions("d")+` AS used_by
 		FROM definitions d
-		LEFT JOIN policy_definition_attachments a ON a.definition_id = d.id
 		WHERE d.category_id IN (SELECT id FROM chain) `+archivedFilter+`
-		GROUP BY d.id
-		ORDER BY d.term`, policyID)
+		ORDER BY lower(d.term), d.term`, policyID)
 	if err != nil {
 		return nil, err
 	}
@@ -125,24 +130,44 @@ func (s *DefinitionLibraryStore) ListPolicyDefinitionCandidates(ctx context.Cont
 
 // CreateDefinitionEntry inserts an active library entry and returns it.
 func (s *DefinitionLibraryStore) CreateDefinitionEntry(ctx context.Context, d domain.DefinitionEntry) (domain.DefinitionEntry, error) {
-	return scanDefinitionEntry(s.db.Querier().QueryRow(ctx, `
+	term, err := domain.NormalizeDefinitionTerm(d.Term)
+	if err != nil {
+		return domain.DefinitionEntry{}, err
+	}
+	out, err := scanDefinitionEntry(s.db.Querier().QueryRow(ctx, `
 		INSERT INTO definitions (category_id, term, definition, created_by_user_id)
 		VALUES ($1,$2,$3,$4)
 		RETURNING `+definitionEntryCols,
-		d.CategoryID, d.Term, d.Definition, d.CreatedByUserID))
+		d.CategoryID, term, d.Definition, d.CreatedByUserID))
+	if isTermTaken(err) {
+		return domain.DefinitionEntry{}, ErrDefinitionTermTaken
+	}
+	return out, err
+}
+
+// isTermTaken reports whether err is the unique violation on the title index.
+func isTermTaken(err error) bool {
+	return constraintName(err) == definitionTermIndex
 }
 
 // UpdateDefinitionEntry edits an entry's term and definition in place and
 // returns it. The category never changes.
 func (s *DefinitionLibraryStore) UpdateDefinitionEntry(ctx context.Context, id uuid.UUID, d domain.DefinitionEntry) (domain.DefinitionEntry, error) {
+	term, err := domain.NormalizeDefinitionTerm(d.Term)
+	if err != nil {
+		return domain.DefinitionEntry{}, err
+	}
 	out, err := scanDefinitionEntry(s.db.Querier().QueryRow(ctx, `
 		UPDATE definitions
 		   SET term=$2, definition=$3
 		 WHERE id=$1
 		 RETURNING `+definitionEntryCols,
-		id, d.Term, d.Definition))
+		id, term, d.Definition))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return domain.DefinitionEntry{}, ErrDefinitionEntryNotFound
+	}
+	if isTermTaken(err) {
+		return domain.DefinitionEntry{}, ErrDefinitionTermTaken
 	}
 	return out, err
 }
@@ -165,7 +190,8 @@ func (s *DefinitionLibraryStore) DeleteDefinitionEntry(ctx context.Context, id u
 	return s.db.RunInTx(ctx, func(tx pgx.Tx) error {
 		var usedBy int
 		if err := tx.QueryRow(ctx,
-			`SELECT COUNT(*) FROM policy_definition_attachments WHERE definition_id=$1`, id).Scan(&usedBy); err != nil {
+			`SELECT (SELECT COUNT(*) FROM policy_definition_attachments WHERE definition_id=$1)
+			      + (SELECT COUNT(*) FROM policy_version_definitions WHERE definition_id=$1)`, id).Scan(&usedBy); err != nil {
 			return err
 		}
 		if usedBy > 0 {

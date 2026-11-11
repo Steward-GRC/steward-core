@@ -77,8 +77,11 @@ type Category struct {
 	// inheritance stops here. Otherwise uuid.Nil inherits and an id names the
 	// template.
 	DefaultTemplateNone bool
-	DefaultWorkflowID   uuid.UUID
-	Owners              []uuid.UUID
+	// DefaultTemplateLocked makes DefaultTemplateID binding for the category and the categories
+	// that inherit it: a policy there must use that template. Only meaningful with a template id.
+	DefaultTemplateLocked bool
+	DefaultWorkflowID     uuid.UUID
+	Owners                []uuid.UUID
 	// AudienceGroupIDs names the directory groups that must acknowledge this
 	// category's documents. nil inherits from the nearest ancestor that sets
 	// it; an empty slice is an explicit "no audience" that stops inheritance.

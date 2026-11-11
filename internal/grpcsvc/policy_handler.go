@@ -53,9 +53,12 @@ type PolicyStorer interface {
 	SetTitle(ctx context.Context, policyID uuid.UUID, title string) (domain.Policy, error)
 	SetProposedTitle(ctx context.Context, policyVersionID uuid.UUID, proposedTitle *string) error
 	SetHomeCategory(ctx context.Context, policyID, targetCategoryID uuid.UUID) (domain.Policy, error)
+	PreviewMoveNumbers(ctx context.Context, target uuid.UUID, types []domain.DocumentType) ([]string, error)
+	MovePolicies(ctx context.Context, target uuid.UUID, ids []uuid.UUID) ([]domain.Policy, error)
 	IsTemplateUpdateAvailable(ctx context.Context, policyVersionID, templateID uuid.UUID) (bool, error)
 	SetAck(ctx context.Context, policyID uuid.UUID, ack *domain.AckTrigger, override []uuid.UUID) (domain.Policy, error)
 	SetTemplate(ctx context.Context, policyID, templateID uuid.UUID, templateNone bool) (domain.Policy, error)
+	ResetStartingDraft(ctx context.Context, draftID, templateVersionID uuid.UUID) error
 	ListAllPolicies(ctx context.Context) ([]domain.Policy, error)
 	ListPoliciesByOwner(ctx context.Context, ownerUserID uuid.UUID, includeRetired bool) ([]domain.Policy, error)
 	ReassignUserPolicies(ctx context.Context, fromUserID, toUserID uuid.UUID) ([]uuid.UUID, int, int, error)
@@ -81,6 +84,10 @@ type PolicyHandler struct {
 	appendixCopier appendixCopier
 	// versionCache holds published versions only. nil turns caching off.
 	versionCache versionCache
+	// moveTypeGate says whether a category holds a document type, for the bulk move. The default asks
+	// the category's own accepted document types; WithMoveTypeGate replaces it, nil means every
+	// category holds both.
+	moveTypeGate func(domain.Category, domain.DocumentType) bool
 }
 
 // versionCache is the optional byte cache for published, immutable data.
@@ -92,7 +99,8 @@ type versionCache interface {
 
 // NewPolicyHandler returns a PolicyHandler. auditor may be nil.
 func NewPolicyHandler(ps PolicyStorer, gs CategoryStorer, ts TemplateStorer, v domain.ContentValidator, auditor auditEmitter) *PolicyHandler {
-	return &PolicyHandler{store: ps, categoryStore: gs, tplStore: ts, validator: v, auditor: auditor}
+	return &PolicyHandler{store: ps, categoryStore: gs, tplStore: ts, validator: v, auditor: auditor,
+		moveTypeGate: categoryAcceptsType}
 }
 
 // WithVersionCache sets the optional read cache.
@@ -266,6 +274,12 @@ func (h *PolicyHandler) CreatePolicy(ctx context.Context, req *corev1.CreatePoli
 		return nil, status.Error(codes.Internal, "get category failed")
 	}
 
+	// A locked category (or one inheriting a locked template) only takes its own template. Asking for
+	// none inherits it, so only a different template is refused.
+	if err := h.checkTemplateLock(ctx, homeGID, tplID, false); err != nil {
+		return nil, err
+	}
+
 	p, err := domain.NewPolicy(req.GetTitle(), homeGID, sensitivityFromProto(req.GetSensitivity()), ownerUID)
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "%v", err)
@@ -286,6 +300,8 @@ func (h *PolicyHandler) CreatePolicy(ctx context.Context, req *corev1.CreatePoli
 		}
 		return nil, status.Errorf(codes.Internal, "create policy: %v", err)
 	}
+	// With no template chosen, the starting draft is the category's default template.
+	h.startDraftFromEffectiveTemplate(ctx, p)
 	if h.auditor != nil {
 		_ = h.auditor.Emit(ctx, audit.Event{
 			Tier: audit.TierAudit, Action: "policy.created",
@@ -303,6 +319,55 @@ func (h *PolicyHandler) CreatePolicy(ctx context.Context, req *corev1.CreatePoli
 		}
 	}
 	return &corev1.CreatePolicyResponse{Policy: policyToProto(p)}, nil
+}
+
+// startDraftFromEffectiveTemplate pins the policy's untouched starting draft to the latest
+// published version of its effective template (the policy's own, else the nearest category
+// default), or to no template when the policy resolves to freeform or nothing is set. It only
+// touches a draft with no author text. A miss is logged and leaves the draft as it is: the policy
+// already exists and the author can still pick a template.
+func (h *PolicyHandler) startDraftFromEffectiveTemplate(ctx context.Context, p domain.Policy) {
+	l := logger.Ctx(ctx)
+	if p.CurrentDraftVersionID == uuid.Nil {
+		l.Debug("starting draft: policy has no draft", log.F("policy_id", p.ID.String()))
+		return
+	}
+	draft, err := h.store.GetPolicyVersion(ctx, p.CurrentDraftVersionID)
+	if err != nil {
+		l.Warn("starting draft: read failed", log.F("policy_id", p.ID.String()), log.F("error", err.Error()))
+		return
+	}
+	if draft.Status != domain.PolicyVersionStatusDraft || validate.HasTextContent(draft.ContentJSON) {
+		l.Debug("starting draft: draft already written or not a draft, left alone",
+			log.F("policy_id", p.ID.String()), log.F("version_id", draft.ID.String()), log.F("status", string(draft.Status)))
+		return
+	}
+	chain, err := h.categoryStore.AncestorChain(ctx, p.HomeCategoryID)
+	if err != nil {
+		l.Warn("starting draft: ancestor chain failed", log.F("policy_id", p.ID.String()), log.F("error", err.Error()))
+		return
+	}
+	res, tplID := domain.EffectiveTemplate(p.TemplateID, p.TemplateNone, chain)
+	tvID := uuid.Nil
+	if res == domain.TemplateResolved {
+		tv, terr := h.tplStore.GetLatestPublishedVersion(ctx, tplID)
+		if terr != nil {
+			l.Warn("starting draft: no published version for the effective template, draft left as it is",
+				log.F("policy_id", p.ID.String()), log.F("template_id", tplID.String()), log.F("error", terr.Error()))
+			return
+		}
+		tvID = tv.ID
+	}
+	l.Debug("starting draft: resetting",
+		log.F("policy_id", p.ID.String()), log.F("version_id", draft.ID.String()),
+		log.F("resolution", int(res)), log.F("template_version_id", tvID.String()))
+	if err := h.store.ResetStartingDraft(ctx, draft.ID, tvID); err != nil {
+		l.Warn("starting draft: reset failed", log.F("policy_id", p.ID.String()), log.F("version_id", draft.ID.String()), log.F("error", err.Error()))
+		return
+	}
+	if h.versionCache != nil {
+		h.versionCache.Del(ctx, "polver:"+draft.ID.String())
+	}
 }
 
 // GetPolicy handles PolicyService.GetPolicy.
@@ -1067,7 +1132,7 @@ func (h *PolicyHandler) SetVersionStatus(ctx context.Context, req *corev1.SetVer
 	if target == domain.PolicyVersionStatusInReview && cur.Status != domain.PolicyVersionStatusInReview &&
 		!validate.HasTextContent(cur.ContentJSON) {
 		logger.Ctx(ctx).Debug("submit refused: version holds no text", log.F("version_id", pvID.String()))
-		return nil, status.Error(codes.InvalidArgument, "submit refused: the document holds no text")
+		return nil, status.Error(codes.FailedPrecondition, "submit refused: the document holds no text")
 	}
 	logger.Ctx(ctx).Debug("set version status",
 		log.F("version_id", pvID.String()), log.F("from", string(cur.Status)), log.F("to", string(target)))
@@ -1787,6 +1852,31 @@ func (h *PolicyHandler) GetEffectiveTemplate(ctx context.Context, req *corev1.Ge
 	}, nil
 }
 
+// checkTemplateLock refuses asking for freeform (none) or a template other than the one the home
+// category's chain locks, with the coded CATEGORY_TEMPLATE_LOCKED. Asking for neither inherits the
+// locked template and passes. A chain that cannot be read fails closed rather than skipping the lock.
+func (h *PolicyHandler) checkTemplateLock(ctx context.Context, homeCategoryID, requested uuid.UUID, none bool) error {
+	chain, err := h.categoryStore.AncestorChain(ctx, homeCategoryID)
+	if err != nil {
+		return storeUnavailable(ctx, "ancestor_chain", err)
+	}
+	locked := domain.TemplateLockViolation(chain, requested, none)
+	if locked == uuid.Nil {
+		logger.Ctx(ctx).Debug("template lock: allowed", log.F("category_id", homeCategoryID.String()),
+			log.F("requested", requested.String()), log.F("none", none))
+		return nil
+	}
+	name := locked.String()
+	if t, terr := h.tplStore.GetTemplate(ctx, locked); terr == nil && t.Name != "" {
+		name = t.Name
+	} else if terr != nil {
+		logger.Ctx(ctx).Debug("template lock: template name lookup failed", log.F("template_id", locked.String()), log.F("error", terr.Error()))
+	}
+	logger.Ctx(ctx).Debug("template lock: refused", log.F("category_id", homeCategoryID.String()),
+		log.F("locked_template_id", locked.String()), log.F("requested", requested.String()), log.F("none", none))
+	return errcodes.Error(ctx, errcodes.CategoryTemplateLocked(name))
+}
+
 // SetPolicyTemplate handles PolicyService.SetPolicyTemplate: none for freeform, a template_id for
 // that template, or neither to inherit.
 func (h *PolicyHandler) SetPolicyTemplate(ctx context.Context, req *corev1.SetPolicyTemplateRequest) (*corev1.SetPolicyTemplateResponse, error) {
@@ -1801,6 +1891,29 @@ func (h *PolicyHandler) SetPolicyTemplate(ctx context.Context, req *corev1.SetPo
 	if _, err := parseOptionalUUID(req.GetActorUserId()); err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid actor_user_id: %v", err)
 	}
+	cur, err := h.store.GetPolicy(ctx, pid)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, status.Error(codes.NotFound, "policy not found")
+		}
+		return nil, storeUnavailable(ctx, "get_policy", err)
+	}
+	if err := h.checkTemplateLock(ctx, cur.HomeCategoryID, tplID, req.GetNone()); err != nil {
+		return nil, err
+	}
+	// A chosen template must have a published version to start from; refuse before anything is
+	// written.
+	if tplID != uuid.Nil && !req.GetNone() {
+		if _, err := h.tplStore.GetLatestPublishedVersion(ctx, tplID); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				logger.Ctx(ctx).Debug("set policy template refused: no published version",
+					log.F("policy_id", pid.String()), log.F("template_id", tplID.String()))
+				return nil, status.Error(codes.FailedPrecondition, "template has no published version")
+			}
+			logger.Ctx(ctx).Error(err, "get latest template version failed", log.F("template_id", tplID.String()))
+			return nil, status.Error(codes.Internal, "get latest template version failed")
+		}
+	}
 	p, err := h.store.SetTemplate(ctx, pid, tplID, req.GetNone())
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -1808,6 +1921,11 @@ func (h *PolicyHandler) SetPolicyTemplate(ctx context.Context, req *corev1.SetPo
 		}
 		return nil, status.Errorf(codes.Internal, "set policy template: %v", err)
 	}
+	logger.Ctx(ctx).Debug("policy template set", log.F("policy_id", p.ID.String()),
+		log.F("none", req.GetNone()), log.F("template_id", tplID.String()))
+	// The untouched starting draft follows the new template; a draft the author has written is
+	// left alone.
+	h.startDraftFromEffectiveTemplate(ctx, p)
 	if h.auditor != nil {
 		attrs := map[string]string{"none": strconv.FormatBool(req.GetNone())}
 		if tplID != uuid.Nil {
@@ -1822,4 +1940,10 @@ func (h *PolicyHandler) SetPolicyTemplate(ctx context.Context, req *corev1.SetPo
 		})
 	}
 	return &corev1.SetPolicyTemplateResponse{Policy: policyToProto(p)}, nil
+}
+
+// categoryAcceptsType is the bulk move's default type gate: the category's accepted document types
+// decide, so a move refuses a document the target does not take (CATEGORY_REFUSES_TYPE).
+func categoryAcceptsType(c domain.Category, dt domain.DocumentType) bool {
+	return c.DocumentTypes.Accepts(dt)
 }

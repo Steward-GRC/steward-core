@@ -78,6 +78,9 @@ message Category {
   // zero; lower comes first. Gaps are possible after a delete, so only the
   // relative order counts.
   int32 order_index = 18;
+  // True when default_template_id is binding: a document in this category, or in one that inherits
+  // the template, must use it. Never set without a default_template_id.
+  bool default_template_locked = 19;
   // Which document types the category takes. Never UNSPECIFIED on a read.
   CategoryDocumentTypes document_types = 20;
 }
@@ -121,6 +124,19 @@ message SetCategoryDefaultsRequest {
 }
 
 message SetCategoryDefaultsResponse {
+  Category category = 1;
+}
+
+// SetCategoryTemplateLockRequest locks or unlocks the category's default
+// template. Locking is refused (FAILED_PRECONDITION) while the category names
+// no default template.
+message SetCategoryTemplateLockRequest {
+  string id = 1;
+  bool locked = 2;
+  string actor_user_id = 3;
+}
+
+message SetCategoryTemplateLockResponse {
   Category category = 1;
 }
 
@@ -319,6 +335,9 @@ service CategoryService {
   rpc GetCategory(GetCategoryRequest) returns (GetCategoryResponse);
   rpc ListCategoryChildren(ListCategoryChildrenRequest) returns (ListCategoryChildrenResponse);
   rpc SetCategoryDefaults(SetCategoryDefaultsRequest) returns (SetCategoryDefaultsResponse);
+  // Locks or unlocks the default template: a locked template is the only one a document in the
+  // category (or one inheriting it) may use.
+  rpc SetCategoryTemplateLock(SetCategoryTemplateLockRequest) returns (SetCategoryTemplateLockResponse);
   rpc RenameCategory(RenameCategoryRequest) returns (RenameCategoryResponse);
   rpc DeleteCategory(DeleteCategoryRequest) returns (DeleteCategoryResponse);
   rpc MoveCategory(MoveCategoryRequest) returns (MoveCategoryResponse);

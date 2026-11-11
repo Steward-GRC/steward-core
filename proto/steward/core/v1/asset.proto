@@ -7,14 +7,14 @@ package steward.core.v1;
 
 option go_package = "github.com/Steward-GRC/steward-core/gen/go/steward/core/v1;corev1";
 
-// Asset is an editor image, stored once in object storage and embedded in
-// documents by its url. The url is a path the gateway serves, never a
+// Asset is an editor image or file, stored once in object storage and embedded
+// in documents by its url. The url is a path the gateway serves, never a
 // presigned object-store link.
 message Asset {
   string id = 1;
   // For example /api/assets/<id>.
   string url = 2;
-  // The sniffed image type.
+  // The sniffed type, taken from the bytes. A text type carries "; charset=utf-8".
   string content_type = 3;
   int64 size_bytes = 4;
   // The cleaned original name, kept as metadata.
@@ -22,10 +22,19 @@ message Asset {
   string created_by_user_id = 6;
   // RFC 3339.
   string created_at = 7;
+  // "image" or "file": how to serve it. The gateway serves an image inline and
+  // a file only as a download (Content-Disposition: attachment,
+  // X-Content-Type-Options: nosniff).
+  string serve_as = 8;
+  // What it is, for the card's icon: pdf, image, video, word, text, markdown
+  // or office. The same ids as AssetKindSetting.kind.
+  string kind = 9;
 }
 
 // UploadAssetRequest carries the bytes. content_type is advisory: the bytes
-// are sniffed and only images are kept.
+// are sniffed, and a declared type or a filename that disagrees with them is
+// refused. Only kinds the admin setting allows are kept. Errors are
+// InvalidArgument with the reason in the message.
 message UploadAssetRequest {
   bytes data = 1;
   string content_type = 2;
@@ -46,10 +55,112 @@ message GetAssetResponse {
   string content_type = 2;
   int64 size_bytes = 3;
   string filename = 4;
+  // As on Asset.
+  string serve_as = 5;
+  string kind = 6;
 }
 
-// AssetService stores and serves editor images.
+// AssetKindSetting is one switch of the admin setting.
+message AssetKindSetting {
+  // pdf, image, video, word, text, markdown or office.
+  string kind = 1;
+  string label = 2;
+  // The extensions the kind covers, without the dot.
+  repeated string extensions = 3;
+  bool enabled = 4;
+  // The hard size cap for the kind, in bytes.
+  int64 max_bytes = 5;
+}
+
+message GetAssetSettingsRequest {}
+
+// AssetSettings lists every kind that has a switch, in display order.
+message AssetSettings {
+  repeated AssetKindSetting kinds = 1;
+  // Extensions that are always refused and have no switch.
+  repeated string refused_extensions = 2;
+  // The largest cap of any kind, for the gateway's upload limit.
+  int64 max_file_bytes = 3;
+  string updated_by = 4;
+  // RFC 3339; empty until the setting is first changed.
+  string updated_at = 5;
+}
+
+message GetAssetSettingsResponse {
+  AssetSettings settings = 1;
+}
+
+// SetAssetSettingsRequest replaces the set of allowed kinds. An empty list
+// turns every kind off. An unknown kind is InvalidArgument. The gateway
+// allows only an admin to call this.
+message SetAssetSettingsRequest {
+  repeated string allowed_kinds = 1;
+  string actor_user_id = 2;
+}
+
+message SetAssetSettingsResponse {
+  AssetSettings settings = 1;
+}
+
+// AssetDocumentLink says where a stored file is used: the document that holds
+// its url in a draft or published version's content.
+message AssetDocumentLink {
+  string policy_id = 1;
+  // The document's title.
+  string title = 2;
+  // "policy" when the link is in the document's own content, "appendix" when
+  // it is in one of the document's appendices. A document appears once per
+  // place.
+  string location = 3;
+}
+
+// StoredAsset is a stored file with where it is used.
+message StoredAsset {
+  // The file's name, kind, size, stored time and uploader
+  // (created_by_user_id).
+  Asset asset = 1;
+  // True when at least one document links to it.
+  bool linked = 2;
+  repeated AssetDocumentLink documents = 3;
+}
+
+// ListAssetsRequest lists the stored editor files. Reporting attachments are
+// a separate store and never appear.
+message ListAssetsRequest {
+  // Only files no document links to.
+  bool unlinked_only = 1;
+}
+
+// ListAssetsResponse is ordered by creation time, newest first.
+message ListAssetsResponse {
+  repeated StoredAsset assets = 1;
+}
+
+// DeleteAssetRequest deletes a stored file at once, even when a document still
+// links to it. The gateway allows only an admin to call this.
+message DeleteAssetRequest {
+  string id = 1;
+  // The admin, recorded on the audit entry.
+  string actor_user_id = 2;
+}
+
+// DeleteAssetResponse echoes what was deleted. removed_from lists the
+// documents whose content had the file or image card taken out. No version is
+// created and nothing is added to any version history; the only record is the
+// asset.deleted audit entry.
+message DeleteAssetResponse {
+  string id = 1;
+  string filename = 2;
+  string kind = 3;
+  repeated AssetDocumentLink removed_from = 4;
+}
+
+// AssetService stores and serves editor images and files.
 service AssetService {
   rpc UploadAsset(UploadAssetRequest) returns (UploadAssetResponse);
   rpc GetAsset(GetAssetRequest) returns (GetAssetResponse);
+  rpc GetAssetSettings(GetAssetSettingsRequest) returns (GetAssetSettingsResponse);
+  rpc SetAssetSettings(SetAssetSettingsRequest) returns (SetAssetSettingsResponse);
+  rpc ListAssets(ListAssetsRequest) returns (ListAssetsResponse);
+  rpc DeleteAsset(DeleteAssetRequest) returns (DeleteAssetResponse);
 }

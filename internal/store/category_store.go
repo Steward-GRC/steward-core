@@ -24,6 +24,10 @@ import (
 // ErrCategoryNotFound means no category matched the id.
 var ErrCategoryNotFound = errors.New("category not found")
 
+// ErrTemplateLockNeedsDefault means the category names no default template, so there is nothing to
+// lock.
+var ErrTemplateLockNeedsDefault = errors.New("category has no default template to lock")
+
 // ErrCategorySlugConflict means a sibling category already uses the slug.
 var ErrCategorySlugConflict = errors.New("a sibling category with this slug already exists")
 
@@ -256,7 +260,7 @@ func (s *CategoryStore) Get(ctx context.Context, id uuid.UUID) (domain.Category,
 	)
 	err := s.db.Querier().QueryRow(ctx,
 		`SELECT id, parent_id, name, slug,
-		        default_template_id, default_template_none, default_workflow_id,
+		        default_template_id, default_template_none, default_template_locked, default_workflow_id,
 		        owners,
 		        audience_group_ids IS NOT NULL, COALESCE(audience_group_ids, '{}'),
 		        ack_triggers, review_cadence, review_date,
@@ -265,7 +269,7 @@ func (s *CategoryStore) Get(ctx context.Context, id uuid.UUID) (domain.Category,
 		        created_at, updated_at, order_index, document_types
 		 FROM categories WHERE id = $1`, id,
 	).Scan(&g.ID, &parentID, &g.Name, &g.Slug,
-		&templateID, &g.DefaultTemplateNone, &workflowID,
+		&templateID, &g.DefaultTemplateNone, &g.DefaultTemplateLocked, &workflowID,
 		&owners,
 		&audienceGroupSet, &audienceGroupIDs,
 		&ackTriggers, &reviewCad, &reviewDate,
@@ -310,21 +314,21 @@ func (s *CategoryStore) AncestorChain(ctx context.Context, categoryID uuid.UUID)
 	rows, err := s.db.Querier().Query(ctx, `
 		WITH RECURSIVE chain AS (
 		  SELECT id, parent_id, name, slug,
-		         default_template_id, default_template_none, default_workflow_id,
+		         default_template_id, default_template_none, default_template_locked, default_workflow_id,
 		         owners, audience_group_ids, ack_triggers, review_cadence, review_date,
 		         exclusion_group_ids, ack_everyone,
 		         created_at, updated_at, order_index, document_types, 0 AS depth
 		  FROM categories WHERE id = $1
 		  UNION ALL
 		  SELECT g.id, g.parent_id, g.name, g.slug,
-		         g.default_template_id, g.default_template_none, g.default_workflow_id,
+		         g.default_template_id, g.default_template_none, g.default_template_locked, g.default_workflow_id,
 		         g.owners, g.audience_group_ids, g.ack_triggers, g.review_cadence, g.review_date,
 		         g.exclusion_group_ids, g.ack_everyone,
 		         g.created_at, g.updated_at, g.order_index, g.document_types, c.depth + 1
 		  FROM categories g JOIN chain c ON g.id = c.parent_id
 		)
 		SELECT id, parent_id, name, slug,
-		       default_template_id, default_template_none, default_workflow_id,
+		       default_template_id, default_template_none, default_template_locked, default_workflow_id,
 		       owners,
 		       audience_group_ids IS NOT NULL, COALESCE(audience_group_ids, '{}'),
 		       ack_triggers, review_cadence, review_date,
@@ -344,7 +348,7 @@ func (s *CategoryStore) AncestorChain(ctx context.Context, categoryID uuid.UUID)
 // roots.
 func (s *CategoryStore) ListChildren(ctx context.Context, parentID uuid.UUID) ([]domain.Category, error) {
 	const base = `SELECT id, parent_id, name, slug,
-	                     default_template_id, default_template_none, default_workflow_id,
+	                     default_template_id, default_template_none, default_template_locked, default_workflow_id,
 	                     owners,
 	                     audience_group_ids IS NOT NULL, COALESCE(audience_group_ids, '{}'),
 	                     ack_triggers, review_cadence, review_date,
@@ -385,12 +389,42 @@ func (s *CategoryStore) SetDefaults(ctx context.Context, id uuid.UUID, templateI
 		`UPDATE categories
 		    SET default_template_id = $2,
 		        default_template_none = $3,
+		        default_template_locked = default_template_locked AND $2::uuid IS NOT NULL,
 		        default_workflow_id = $4,
 		        updated_at = now()
 		  WHERE id = $1`,
 		id, templatePtr, templateNone, workflowPtr)
 	if err != nil {
 		return domain.Category{}, fmt.Errorf("CategoryStore.SetDefaults: %w", err)
+	}
+	return s.Get(ctx, id)
+}
+
+// SetTemplateLock locks or unlocks the category's default template. Locking needs a default
+// template to hold to (ErrTemplateLockNeedsDefault); lifting never fails on that. An unknown
+// category is ErrCategoryNotFound. The check and the write are one statement, so a concurrent
+// SetDefaults cannot leave a lock without a template.
+func (s *CategoryStore) SetTemplateLock(ctx context.Context, id uuid.UUID, locked bool) (domain.Category, error) {
+	tag, err := s.db.Querier().Exec(ctx,
+		`UPDATE categories
+		    SET default_template_locked = $2,
+		        updated_at = now()
+		  WHERE id = $1
+		    AND ($2 = false OR default_template_id IS NOT NULL)`,
+		id, locked)
+	if err != nil {
+		return domain.Category{}, fmt.Errorf("CategoryStore.SetTemplateLock: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		var exists bool
+		if err := s.db.Querier().QueryRow(ctx,
+			`SELECT EXISTS (SELECT 1 FROM categories WHERE id = $1)`, id).Scan(&exists); err != nil {
+			return domain.Category{}, fmt.Errorf("CategoryStore.SetTemplateLock: %w", err)
+		}
+		if !exists {
+			return domain.Category{}, fmt.Errorf("CategoryStore.SetTemplateLock %s: %w", id, ErrCategoryNotFound)
+		}
+		return domain.Category{}, fmt.Errorf("CategoryStore.SetTemplateLock %s: %w", id, ErrTemplateLockNeedsDefault)
 	}
 	return s.Get(ctx, id)
 }
@@ -831,21 +865,21 @@ func (s *CategoryStore) Subtree(ctx context.Context, rootID uuid.UUID) ([]domain
 	rows, err := s.db.Querier().Query(ctx, `
 		WITH RECURSIVE tree AS (
 		  SELECT id, parent_id, name, slug,
-		         default_template_id, default_template_none, default_workflow_id,
+		         default_template_id, default_template_none, default_template_locked, default_workflow_id,
 		         owners, audience_group_ids, ack_triggers, review_cadence, review_date,
 		         exclusion_group_ids, ack_everyone,
 		         created_at, updated_at, order_index, document_types
 		  FROM categories WHERE id = $1
 		  UNION ALL
 		  SELECT g.id, g.parent_id, g.name, g.slug,
-		         g.default_template_id, g.default_template_none, g.default_workflow_id,
+		         g.default_template_id, g.default_template_none, g.default_template_locked, g.default_workflow_id,
 		         g.owners, g.audience_group_ids, g.ack_triggers, g.review_cadence, g.review_date,
 		         g.exclusion_group_ids, g.ack_everyone,
 		         g.created_at, g.updated_at, g.order_index, g.document_types
 		  FROM categories g JOIN tree t ON g.parent_id = t.id
 		)
 		SELECT id, parent_id, name, slug,
-		       default_template_id, default_template_none, default_workflow_id,
+		       default_template_id, default_template_none, default_template_locked, default_workflow_id,
 		       owners,
 		       audience_group_ids IS NOT NULL, COALESCE(audience_group_ids, '{}'),
 		       ack_triggers, review_cadence, review_date,
@@ -937,7 +971,7 @@ func scanCategories(rows interface {
 			documentTypes     string
 		)
 		if err := rows.Scan(&g.ID, &parentID, &g.Name, &g.Slug,
-			&templateID, &g.DefaultTemplateNone, &workflowID,
+			&templateID, &g.DefaultTemplateNone, &g.DefaultTemplateLocked, &workflowID,
 			&owners,
 			&audienceGroupSet, &audienceGroupIDs,
 			&ackTriggers, &reviewCad, &reviewDate,

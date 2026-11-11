@@ -6,6 +6,7 @@ package store_test
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -195,6 +196,15 @@ func TestPolicyStoreSaveWhileInReviewStaysInReview(t *testing.T) {
 	if err := f.ps.UpdateDraftContent(f.ctx, d1.ID, reviewedText); err != nil {
 		t.Fatalf("UpdateDraftContent in review: %v", err)
 	}
+	// Mock: collab "keeps a checkpoint for a version in review": the checkpoint is stored and the
+	// version stays in review.
+	got, err := f.ps.GetPolicyVersion(f.ctx, d1.ID)
+	if err != nil {
+		t.Fatalf("GetPolicyVersion: %v", err)
+	}
+	if got.Status != domain.PolicyVersionStatusInReview || !strings.Contains(got.ContentJSON, "Body") {
+		t.Fatalf("after checkpoint: status %q content %q, want in_review with the checkpoint text", got.Status, got.ContentJSON)
+	}
 }
 
 // Mock: author-loop "returns a withdrawn submission to Draft".
@@ -260,5 +270,41 @@ func TestPolicyStoreListPublishedVersionsSkipsReviewAndRejected(t *testing.T) {
 	f.setStatus(d3.ID, domain.PolicyVersionStatusRejected)
 	if p := f.policy(); p.CurrentVersionStatus != domain.PolicyVersionStatusPublished || p.CurrentPublishedVersionID != d1.ID {
 		t.Fatalf("current after rejection beside published: %q %s", p.CurrentVersionStatus, p.CurrentPublishedVersionID)
+	}
+}
+
+// ResetStartingDraft pins and blanks a draft, unpins it for uuid.Nil, and refuses a version that
+// is in review.
+func TestPolicyStoreResetStartingDraft(t *testing.T) {
+	f := newStatusFixture(t)
+	draftID := f.p.CurrentDraftVersionID
+
+	if err := f.ps.ResetStartingDraft(f.ctx, draftID, f.tv.ID); err != nil {
+		t.Fatalf("ResetStartingDraft pin: %v", err)
+	}
+	got, err := f.ps.GetPolicyVersion(f.ctx, draftID)
+	if err != nil {
+		t.Fatalf("GetPolicyVersion: %v", err)
+	}
+	if got.TemplateVersionID != f.tv.ID || got.ContentJSON != "{}" {
+		t.Fatalf("after pin: template %s content %q, want %s and {}", got.TemplateVersionID, got.ContentJSON, f.tv.ID)
+	}
+
+	if err := f.ps.ResetStartingDraft(f.ctx, draftID, uuid.Nil); err != nil {
+		t.Fatalf("ResetStartingDraft unpin: %v", err)
+	}
+	got, _ = f.ps.GetPolicyVersion(f.ctx, draftID)
+	if got.TemplateVersionID != uuid.Nil {
+		t.Fatalf("after unpin: template %s, want none", got.TemplateVersionID)
+	}
+
+	saved, _ := f.save(reviewedText)
+	f.setStatus(saved.ID, domain.PolicyVersionStatusInReview)
+	if err := f.ps.ResetStartingDraft(f.ctx, saved.ID, uuid.Nil); err == nil {
+		t.Fatal("ResetStartingDraft on a version in review should be refused")
+	}
+	kept, _ := f.ps.GetPolicyVersion(f.ctx, saved.ID)
+	if kept.ContentJSON == "{}" {
+		t.Fatal("version in review was blanked")
 	}
 }

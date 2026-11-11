@@ -22,53 +22,6 @@ var (
 	webpBytes = []byte("RIFF\x00\x00\x00\x00WEBPVP8 ")
 )
 
-func TestDetectAssetContentType_Allowed(t *testing.T) {
-	cases := map[string]struct {
-		data []byte
-		want string
-	}{
-		"png":  {pngBytes, "image/png"},
-		"jpeg": {jpegBytes, "image/jpeg"},
-		"gif":  {gifBytes, "image/gif"},
-		"webp": {webpBytes, "image/webp"},
-	}
-	for name, tc := range cases {
-		t.Run(name, func(t *testing.T) {
-			got, err := domain.DetectAssetContentType(tc.data)
-			if err != nil {
-				t.Fatalf("DetectAssetContentType: unexpected err: %v", err)
-			}
-			if got != tc.want {
-				t.Errorf("content type = %q, want %q", got, tc.want)
-			}
-		})
-	}
-}
-
-func TestDetectAssetContentType_Empty(t *testing.T) {
-	_, err := domain.DetectAssetContentType(nil)
-	if !errors.Is(err, domain.ErrAssetEmpty) {
-		t.Fatalf("err = %v, want ErrAssetEmpty", err)
-	}
-}
-
-func TestDetectAssetContentType_RejectsNonImage(t *testing.T) {
-	// Plain text and an SVG (XML) both sniff outside the raster allowlist and
-	// must be rejected — SVG especially, as an inline-served XSS vector.
-	for name, data := range map[string][]byte{
-		"text": []byte("just some plain text, definitely not an image"),
-		"svg":  []byte(`<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg"></svg>`),
-		"pdf":  []byte("%PDF-1.4\n%dummy"),
-	} {
-		t.Run(name, func(t *testing.T) {
-			_, err := domain.DetectAssetContentType(data)
-			if !errors.Is(err, domain.ErrAssetUnsupportedType) {
-				t.Fatalf("err = %v, want ErrAssetUnsupportedType", err)
-			}
-		})
-	}
-}
-
 func TestValidateAssetSize(t *testing.T) {
 	if err := domain.ValidateAssetSize(0); !errors.Is(err, domain.ErrAssetEmpty) {
 		t.Errorf("size 0: err = %v, want ErrAssetEmpty", err)
@@ -76,10 +29,10 @@ func TestValidateAssetSize(t *testing.T) {
 	if err := domain.ValidateAssetSize(1024); err != nil {
 		t.Errorf("size 1024: unexpected err %v", err)
 	}
-	if err := domain.ValidateAssetSize(domain.MaxAssetBytes); err != nil {
+	if err := domain.ValidateAssetSize(domain.MaxFileBytes); err != nil {
 		t.Errorf("size == max: unexpected err %v", err)
 	}
-	if err := domain.ValidateAssetSize(domain.MaxAssetBytes + 1); !errors.Is(err, domain.ErrAssetTooLarge) {
+	if err := domain.ValidateAssetSize(domain.MaxFileBytes + 1); !errors.Is(err, domain.ErrAssetTooLarge) {
 		t.Errorf("over max: err = %v, want ErrAssetTooLarge", err)
 	}
 }

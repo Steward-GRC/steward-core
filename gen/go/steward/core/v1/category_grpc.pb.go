@@ -26,6 +26,7 @@ const (
 	CategoryService_GetCategory_FullMethodName              = "/steward.core.v1.CategoryService/GetCategory"
 	CategoryService_ListCategoryChildren_FullMethodName     = "/steward.core.v1.CategoryService/ListCategoryChildren"
 	CategoryService_SetCategoryDefaults_FullMethodName      = "/steward.core.v1.CategoryService/SetCategoryDefaults"
+	CategoryService_SetCategoryTemplateLock_FullMethodName  = "/steward.core.v1.CategoryService/SetCategoryTemplateLock"
 	CategoryService_RenameCategory_FullMethodName           = "/steward.core.v1.CategoryService/RenameCategory"
 	CategoryService_DeleteCategory_FullMethodName           = "/steward.core.v1.CategoryService/DeleteCategory"
 	CategoryService_MoveCategory_FullMethodName             = "/steward.core.v1.CategoryService/MoveCategory"
@@ -50,6 +51,9 @@ type CategoryServiceClient interface {
 	GetCategory(ctx context.Context, in *GetCategoryRequest, opts ...grpc.CallOption) (*GetCategoryResponse, error)
 	ListCategoryChildren(ctx context.Context, in *ListCategoryChildrenRequest, opts ...grpc.CallOption) (*ListCategoryChildrenResponse, error)
 	SetCategoryDefaults(ctx context.Context, in *SetCategoryDefaultsRequest, opts ...grpc.CallOption) (*SetCategoryDefaultsResponse, error)
+	// Locks or unlocks the default template: a locked template is the only one a document in the
+	// category (or one inheriting it) may use.
+	SetCategoryTemplateLock(ctx context.Context, in *SetCategoryTemplateLockRequest, opts ...grpc.CallOption) (*SetCategoryTemplateLockResponse, error)
 	RenameCategory(ctx context.Context, in *RenameCategoryRequest, opts ...grpc.CallOption) (*RenameCategoryResponse, error)
 	DeleteCategory(ctx context.Context, in *DeleteCategoryRequest, opts ...grpc.CallOption) (*DeleteCategoryResponse, error)
 	MoveCategory(ctx context.Context, in *MoveCategoryRequest, opts ...grpc.CallOption) (*MoveCategoryResponse, error)
@@ -116,6 +120,16 @@ func (c *categoryServiceClient) SetCategoryDefaults(ctx context.Context, in *Set
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(SetCategoryDefaultsResponse)
 	err := c.cc.Invoke(ctx, CategoryService_SetCategoryDefaults_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *categoryServiceClient) SetCategoryTemplateLock(ctx context.Context, in *SetCategoryTemplateLockRequest, opts ...grpc.CallOption) (*SetCategoryTemplateLockResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SetCategoryTemplateLockResponse)
+	err := c.cc.Invoke(ctx, CategoryService_SetCategoryTemplateLock_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -243,6 +257,9 @@ type CategoryServiceServer interface {
 	GetCategory(context.Context, *GetCategoryRequest) (*GetCategoryResponse, error)
 	ListCategoryChildren(context.Context, *ListCategoryChildrenRequest) (*ListCategoryChildrenResponse, error)
 	SetCategoryDefaults(context.Context, *SetCategoryDefaultsRequest) (*SetCategoryDefaultsResponse, error)
+	// Locks or unlocks the default template: a locked template is the only one a document in the
+	// category (or one inheriting it) may use.
+	SetCategoryTemplateLock(context.Context, *SetCategoryTemplateLockRequest) (*SetCategoryTemplateLockResponse, error)
 	RenameCategory(context.Context, *RenameCategoryRequest) (*RenameCategoryResponse, error)
 	DeleteCategory(context.Context, *DeleteCategoryRequest) (*DeleteCategoryResponse, error)
 	MoveCategory(context.Context, *MoveCategoryRequest) (*MoveCategoryResponse, error)
@@ -286,6 +303,9 @@ func (UnimplementedCategoryServiceServer) ListCategoryChildren(context.Context, 
 }
 func (UnimplementedCategoryServiceServer) SetCategoryDefaults(context.Context, *SetCategoryDefaultsRequest) (*SetCategoryDefaultsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method SetCategoryDefaults not implemented")
+}
+func (UnimplementedCategoryServiceServer) SetCategoryTemplateLock(context.Context, *SetCategoryTemplateLockRequest) (*SetCategoryTemplateLockResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method SetCategoryTemplateLock not implemented")
 }
 func (UnimplementedCategoryServiceServer) RenameCategory(context.Context, *RenameCategoryRequest) (*RenameCategoryResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method RenameCategory not implemented")
@@ -409,6 +429,24 @@ func _CategoryService_SetCategoryDefaults_Handler(srv interface{}, ctx context.C
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(CategoryServiceServer).SetCategoryDefaults(ctx, req.(*SetCategoryDefaultsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CategoryService_SetCategoryTemplateLock_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetCategoryTemplateLockRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CategoryServiceServer).SetCategoryTemplateLock(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CategoryService_SetCategoryTemplateLock_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CategoryServiceServer).SetCategoryTemplateLock(ctx, req.(*SetCategoryTemplateLockRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -633,6 +671,10 @@ var CategoryService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SetCategoryDefaults",
 			Handler:    _CategoryService_SetCategoryDefaults_Handler,
+		},
+		{
+			MethodName: "SetCategoryTemplateLock",
+			Handler:    _CategoryService_SetCategoryTemplateLock_Handler,
 		},
 		{
 			MethodName: "RenameCategory",

@@ -23,6 +23,7 @@ import (
 // TemplateStorer is the store interface the TemplateHandler depends on.
 type TemplateStorer interface {
 	CreateTemplate(ctx context.Context, t domain.Template) (domain.Template, error)
+	GetTemplate(ctx context.Context, id uuid.UUID) (domain.Template, error)
 	CreateTemplateVersion(ctx context.Context, tv domain.TemplateVersion) (domain.TemplateVersion, error)
 	PublishTemplateVersion(ctx context.Context, id uuid.UUID) (domain.TemplateVersion, error)
 	GetTemplateVersion(ctx context.Context, id uuid.UUID) (domain.TemplateVersion, error)

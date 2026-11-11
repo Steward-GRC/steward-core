@@ -92,7 +92,7 @@ func TestUploadAsset_Validation(t *testing.T) {
 	}{
 		"missing actor": {&corev1.UploadAssetRequest{Data: pngFixture}, codes.InvalidArgument},
 		"empty data":    {&corev1.UploadAssetRequest{CreatedByUserId: "u"}, codes.InvalidArgument},
-		"not an image":  {&corev1.UploadAssetRequest{Data: []byte("plain text not image"), CreatedByUserId: "u"}, codes.InvalidArgument},
+		"not allowed":   {&corev1.UploadAssetRequest{Data: []byte("<html>not an image</html>"), CreatedByUserId: "u"}, codes.InvalidArgument},
 		"too large":     {&corev1.UploadAssetRequest{Data: append([]byte("\x89PNG\r\n\x1a\n"), make([]byte, domain.MaxAssetBytes+1)...), CreatedByUserId: "u"}, codes.InvalidArgument},
 	}
 	for name, tc := range cases {

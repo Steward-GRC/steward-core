@@ -5,12 +5,14 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
 	"strings"
 	"time"
 
+	log "github.com/Bugs5382/go-log"
 	postgres "github.com/Bugs5382/go-postgres"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -263,6 +265,102 @@ func (s *PolicyStore) SetHomeCategory(ctx context.Context, policyID, targetCateg
 		return domain.Policy{}, err
 	}
 	return s.GetPolicy(ctx, policyID)
+}
+
+// ErrPolicyRetired is wrapped by MovePolicies when a document in the batch is retired, which
+// refuses the whole batch.
+var ErrPolicyRetired = errors.New("policy is retired")
+
+// PreviewMoveNumbers returns the number each document of the given types would get if all were
+// moved into target, in order: the n-th document of a type gets the n-th number after the target's
+// counter for that type. It changes nothing.
+func (s *PolicyStore) PreviewMoveNumbers(ctx context.Context, target uuid.UUID, types []domain.DocumentType) ([]string, error) {
+	var (
+		code *string
+		slug string
+	)
+	if err := s.db.Querier().QueryRow(ctx,
+		`SELECT code, slug FROM categories WHERE id = $1`, target,
+	).Scan(&code, &slug); err != nil {
+		return nil, fmt.Errorf("PolicyStore.PreviewMoveNumbers category: %w", err)
+	}
+	segment := numberCodeSegment(code, slug)
+	last := map[domain.DocumentType]int{}
+	taken := map[domain.DocumentType]int{}
+	out := make([]string, 0, len(types))
+	for _, dt := range types {
+		if _, ok := last[dt]; !ok {
+			var n int
+			err := s.db.Querier().QueryRow(ctx,
+				`SELECT COALESCE((SELECT last_seq FROM category_policy_seq WHERE category_id = $1 AND document_type = $2), 0)`,
+				target, string(dt),
+			).Scan(&n)
+			if err != nil {
+				return nil, fmt.Errorf("PolicyStore.PreviewMoveNumbers seq: %w", err)
+			}
+			last[dt] = n
+		}
+		taken[dt]++
+		out = append(out, renderDocNumber(dt, segment, last[dt]+taken[dt]))
+	}
+	return out, nil
+}
+
+// MovePolicies moves the documents into target in one transaction, in the order given, each taking
+// the next number of its type from the target's counter. Either every document moves or none does:
+// a retired or missing document fails the batch and rolls the counters back. A document already in
+// target keeps its number. The documents come back as they stand after the move, in the same order.
+func (s *PolicyStore) MovePolicies(ctx context.Context, target uuid.UUID, ids []uuid.UUID) ([]domain.Policy, error) {
+	err := s.db.RunInTx(ctx, func(tx pgx.Tx) error {
+		for _, id := range ids {
+			var (
+				docType string
+				home    uuid.UUID
+				retired *time.Time
+			)
+			// The row lock keeps a concurrent retire or move from slipping between the check and
+			// the update.
+			if err := tx.QueryRow(ctx,
+				`SELECT document_type, home_category_id, retired_at FROM policies WHERE id = $1 FOR UPDATE`, id,
+			).Scan(&docType, &home, &retired); err != nil {
+				return fmt.Errorf("PolicyStore.MovePolicies %s: %w", id, err)
+			}
+			if retired != nil {
+				return fmt.Errorf("PolicyStore.MovePolicies %s: %w", id, ErrPolicyRetired)
+			}
+			if home == target {
+				continue
+			}
+			var seq int
+			if err := tx.QueryRow(ctx,
+				`INSERT INTO category_policy_seq (category_id, document_type, last_seq) VALUES ($1, $2, 1)
+				 ON CONFLICT (category_id, document_type) DO UPDATE
+				   SET last_seq = category_policy_seq.last_seq + 1
+				 RETURNING last_seq`,
+				target, docType,
+			).Scan(&seq); err != nil {
+				return fmt.Errorf("PolicyStore.MovePolicies seq: %w", err)
+			}
+			if _, err := tx.Exec(ctx,
+				`UPDATE policies SET home_category_id = $2, sequence = $3, updated_at = now() WHERE id = $1`,
+				id, target, seq); err != nil {
+				return fmt.Errorf("PolicyStore.MovePolicies update: %w", err)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]domain.Policy, 0, len(ids))
+	for _, id := range ids {
+		p, err := s.GetPolicy(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, nil
 }
 
 // GetPolicy fetches a policy by id. NULL ids come back as uuid.Nil and a NULL
@@ -1049,26 +1147,111 @@ func (s *PolicyStore) SetAck(ctx context.Context, policyID uuid.UUID, ack *domai
 
 // SetTemplate sets the policy's own template: templateNone means freeform
 // (the id is stored as NULL), uuid.Nil inherits from the category chain.
+// Going freeform also blanks the working draft when the author has not
+// written in it yet (see blankUntouchedDraft); a draft with the author's text
+// is left alone.
 func (s *PolicyStore) SetTemplate(ctx context.Context, policyID, templateID uuid.UUID, templateNone bool) (domain.Policy, error) {
 	var templatePtr *uuid.UUID
 	if templateID != uuid.Nil && !templateNone {
 		templatePtr = &templateID
 	}
-	tag, err := s.db.Querier().Exec(ctx,
-		`UPDATE policies
-		    SET template_id   = $2,
-		        template_none = $3,
-		        updated_at    = now()
-		  WHERE id = $1`,
-		policyID, templatePtr, templateNone,
-	)
+	err := s.db.RunInTx(ctx, func(tx pgx.Tx) error {
+		tag, err := tx.Exec(ctx,
+			`UPDATE policies
+			    SET template_id   = $2,
+			        template_none = $3,
+			        updated_at    = now()
+			  WHERE id = $1`,
+			policyID, templatePtr, templateNone,
+		)
+		if err != nil {
+			return fmt.Errorf("PolicyStore.SetTemplate: %w", err)
+		}
+		if tag.RowsAffected() == 0 {
+			return fmt.Errorf("PolicyStore.SetTemplate %s: %w", policyID, pgx.ErrNoRows)
+		}
+		if templateNone {
+			return blankUntouchedDraft(ctx, tx, policyID)
+		}
+		return nil
+	})
 	if err != nil {
-		return domain.Policy{}, fmt.Errorf("PolicyStore.SetTemplate: %w", err)
-	}
-	if tag.RowsAffected() == 0 {
-		return domain.Policy{}, fmt.Errorf("PolicyStore.SetTemplate %s: %w", policyID, pgx.ErrNoRows)
+		return domain.Policy{}, err
 	}
 	return s.GetPolicy(ctx, policyID)
+}
+
+// ResetStartingDraft blanks a draft and pins it to templateVersionID, or to no template when that
+// is uuid.Nil. It is for the untouched starting draft only: the caller has checked there is no
+// author text. A row that is missing or not a draft returns pgx.ErrNoRows, so a version in review
+// is never rewritten.
+func (s *PolicyStore) ResetStartingDraft(ctx context.Context, draftID, templateVersionID uuid.UUID) error {
+	var tvPtr *uuid.UUID
+	if templateVersionID != uuid.Nil {
+		tvPtr = &templateVersionID
+	}
+	tag, err := s.db.Querier().Exec(ctx,
+		`UPDATE policy_versions
+		    SET template_version_id = $2,
+		        content             = $3::jsonb
+		  WHERE id = $1 AND status = 'draft'`,
+		draftID, tvPtr, initialDraftContent,
+	)
+	if err != nil {
+		return fmt.Errorf("PolicyStore.ResetStartingDraft: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("PolicyStore.ResetStartingDraft %s: %w", draftID, pgx.ErrNoRows)
+	}
+	return nil
+}
+
+// blankUntouchedDraft makes the policy's draft blank and freeform again when it still holds only what
+// it started with (domain.DraftUntouched): no text, or only the pinned template's section titles. A
+// draft in review, or one with the author's text, is not touched.
+func blankUntouchedDraft(ctx context.Context, tx pgx.Tx, policyID uuid.UUID) error {
+	var (
+		draftID   uuid.UUID
+		pinned    *uuid.UUID
+		content   string
+		sectionsJ []byte
+	)
+	err := tx.QueryRow(ctx,
+		`SELECT pv.id, pv.template_version_id, pv.content::text, tv.sections
+		   FROM policy_versions pv
+		   LEFT JOIN template_versions tv ON tv.id = pv.template_version_id
+		  WHERE pv.policy_id = $1 AND pv.status = 'draft'
+		  FOR UPDATE OF pv`, policyID,
+	).Scan(&draftID, &pinned, &content, &sectionsJ)
+	if errors.Is(err, pgx.ErrNoRows) {
+		logger.Ctx(ctx).Debug("policy has no working draft to blank", log.F("policy_id", policyID.String()))
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("PolicyStore.SetTemplate read draft: %w", err)
+	}
+	var titles []string
+	if len(sectionsJ) > 0 {
+		var sections []struct{ Title string }
+		if err := json.Unmarshal(sectionsJ, &sections); err != nil {
+			return fmt.Errorf("PolicyStore.SetTemplate unmarshal sections: %w", err)
+		}
+		for _, sec := range sections {
+			titles = append(titles, sec.Title)
+		}
+	}
+	if !domain.DraftUntouched(content, titles) {
+		logger.Ctx(ctx).Debug("draft carries the author's text, left alone", log.F("policy_id", policyID.String()))
+		return nil
+	}
+	if _, err := tx.Exec(ctx,
+		`UPDATE policy_versions SET template_version_id = NULL, content = $2::jsonb WHERE id = $1`,
+		draftID, initialDraftContent,
+	); err != nil {
+		return fmt.Errorf("PolicyStore.SetTemplate blank draft: %w", err)
+	}
+	logger.Ctx(ctx).Info("untouched draft blanked for a freeform policy", log.F("policy_id", policyID.String()))
+	return nil
 }
 
 // ListAllPolicies returns every policy, unordered, for the obligation

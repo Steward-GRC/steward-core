@@ -33,6 +33,7 @@ type CategoryStorer interface {
 	ListChildren(ctx context.Context, parentID uuid.UUID) ([]domain.Category, error)
 	AncestorChain(ctx context.Context, categoryID uuid.UUID) ([]domain.Category, error)
 	SetDefaults(ctx context.Context, id uuid.UUID, templateID, workflowID uuid.UUID, templateNone bool) (domain.Category, error)
+	SetTemplateLock(ctx context.Context, id uuid.UUID, locked bool) (domain.Category, error)
 	Rename(ctx context.Context, id uuid.UUID, name, slug string) (domain.Category, error)
 	Delete(ctx context.Context, id uuid.UUID) error
 	MoveCategory(ctx context.Context, categoryID uuid.UUID, newParentID *uuid.UUID) (domain.Category, int, error)
@@ -188,25 +189,26 @@ func categoryToProto(g domain.Category) *corev1.Category {
 		ackEveryone = *g.AckEveryone
 	}
 	return &corev1.Category{
-		Id:                   g.ID.String(),
-		Name:                 g.Name,
-		Slug:                 g.Slug,
-		ParentId:             nilableUUID(g.ParentID),
-		DefaultTemplateId:    nilableUUID(g.DefaultTemplateID),
-		DefaultTemplateNone:  g.DefaultTemplateNone,
-		DefaultWorkflowId:    nilableUUID(g.DefaultWorkflowID),
-		Owners:               owners,
-		AudienceGroupIds:     audienceGroupIDs,
-		AckTriggers:          ackTriggerToProto(g.AckTriggers),
-		ReviewCadence:        reviewCadenceToProto(g.ReviewCadence),
-		ReviewDate:           reviewDateToString(g.ReviewDate),
-		ExclusionGroupIds:    exclusionGroupIDs,
-		AudienceGroupIdsSet:  audienceGroupIDsSet,
-		ExclusionGroupIdsSet: exclusionGroupIDsSet,
-		AckEveryone:          ackEveryone,
-		AckEveryoneSet:       ackEveryoneSet,
-		OrderIndex:           toInt32(g.OrderIndex),
-		DocumentTypes:        categoryDocumentTypesToProto(g.DocumentTypes),
+		Id:                    g.ID.String(),
+		Name:                  g.Name,
+		Slug:                  g.Slug,
+		ParentId:              nilableUUID(g.ParentID),
+		DefaultTemplateId:     nilableUUID(g.DefaultTemplateID),
+		DefaultTemplateNone:   g.DefaultTemplateNone,
+		DefaultTemplateLocked: g.DefaultTemplateLocked,
+		DefaultWorkflowId:     nilableUUID(g.DefaultWorkflowID),
+		Owners:                owners,
+		AudienceGroupIds:      audienceGroupIDs,
+		AckTriggers:           ackTriggerToProto(g.AckTriggers),
+		ReviewCadence:         reviewCadenceToProto(g.ReviewCadence),
+		ReviewDate:            reviewDateToString(g.ReviewDate),
+		ExclusionGroupIds:     exclusionGroupIDs,
+		AudienceGroupIdsSet:   audienceGroupIDsSet,
+		ExclusionGroupIdsSet:  exclusionGroupIDsSet,
+		AckEveryone:           ackEveryone,
+		AckEveryoneSet:        ackEveryoneSet,
+		OrderIndex:            toInt32(g.OrderIndex),
+		DocumentTypes:         categoryDocumentTypesToProto(g.DocumentTypes),
 	}
 }
 
@@ -465,6 +467,52 @@ func (h *CategoryHandler) SetCategoryDefaults(ctx context.Context, req *corev1.S
 		})
 	}
 	return &corev1.SetCategoryDefaultsResponse{Category: categoryToProto(g)}, nil
+}
+
+// SetCategoryTemplateLock handles CategoryService.SetCategoryTemplateLock. Locking a category that
+// names no default template is a coded FAILED_PRECONDITION. Who may lock is decided by the caller
+// (the gateway); this service takes the actor for the audit trail only.
+func (h *CategoryHandler) SetCategoryTemplateLock(ctx context.Context, req *corev1.SetCategoryTemplateLockRequest) (*corev1.SetCategoryTemplateLockResponse, error) {
+	id, err := uuid.Parse(req.GetId())
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid id: %v", err)
+	}
+	logger.Ctx(ctx).Debug("set category template lock", log.F("category_id", id.String()), log.F("locked", req.GetLocked()))
+	g, err := h.store.SetTemplateLock(ctx, id, req.GetLocked())
+	if err != nil {
+		switch {
+		case errors.Is(err, store.ErrCategoryNotFound):
+			logger.Ctx(ctx).Debug("template lock: category not found", log.F("category_id", id.String()))
+			return nil, status.Error(codes.NotFound, "category not found")
+		case errors.Is(err, store.ErrTemplateLockNeedsDefault):
+			name := h.categoryName(ctx, id)
+			logger.Ctx(ctx).Debug("template lock refused: no default template", log.F("category_id", id.String()))
+			return nil, errcodes.Error(ctx, errcodes.TemplateLockNeedsDefault(name))
+		default:
+			return nil, storeUnavailable(ctx, "set_category_template_lock", err)
+		}
+	}
+	logger.Ctx(ctx).Info("category template lock set", log.F("category_id", id.String()), log.F("locked", g.DefaultTemplateLocked))
+	if h.auditor != nil {
+		_ = h.auditor.Emit(ctx, audit.Event{
+			Tier: audit.TierAudit, Action: "category.template_lock_set",
+			Subject:     "category:" + g.ID.String(),
+			GroupID:     g.ID.String(),
+			ActorUserID: req.GetActorUserId(),
+			Attributes:  map[string]string{"locked": strconv.FormatBool(g.DefaultTemplateLocked)},
+		})
+	}
+	return &corev1.SetCategoryTemplateLockResponse{Category: categoryToProto(g)}, nil
+}
+
+// categoryName resolves a category's display name for a user-facing message; the id is the fallback
+// so a failed lookup never hides the refusal.
+func (h *CategoryHandler) categoryName(ctx context.Context, id uuid.UUID) string {
+	g, err := h.store.Get(ctx, id)
+	if err != nil || g.Name == "" {
+		return id.String()
+	}
+	return g.Name
 }
 
 // RenameCategory handles CategoryService.RenameCategory. The new slug
