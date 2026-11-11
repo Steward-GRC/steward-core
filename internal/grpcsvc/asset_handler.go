@@ -114,7 +114,7 @@ func (h *AssetHandler) UploadAsset(ctx context.Context, req *corev1.UploadAssetR
 	data := req.GetData()
 	lg.Debug("upload asset: received", log.F("size_bytes", len(data)))
 	if err := domain.ValidateAssetSize(len(data)); err != nil {
-		lg.Debug("upload asset: refused on size", log.F("size_bytes", len(data)), log.F("reason", err.Error()))
+		lg.Debug("upload asset: refused on size", log.F("size_bytes", len(data)), log.F("class", refusalClass(err)))
 		return nil, status.Errorf(codes.InvalidArgument, "%v", err)
 	}
 	allowed, err := h.allowedKinds(ctx)
@@ -124,7 +124,7 @@ func (h *AssetHandler) UploadAsset(ctx context.Context, req *corev1.UploadAssetR
 	}
 	detected, err := domain.DetectAsset(data, req.GetFilename(), req.GetContentType(), allowed)
 	if err != nil {
-		lg.Info("upload asset: refused", log.F("size_bytes", len(data)), log.F("reason", err.Error()))
+		lg.Info("upload asset: refused", log.F("size_bytes", len(data)), log.F("class", refusalClass(err)))
 		return nil, status.Errorf(codes.InvalidArgument, "%v", err)
 	}
 	if err := domain.ValidateKindSize(detected.Kind, len(data)); err != nil {
