@@ -29,14 +29,15 @@ type fakePolicyAppendixBackend struct {
 	changed bool
 	err     error
 
-	gotPolicy  uuid.UUID
-	gotID      uuid.UUID
-	gotActor   uuid.UUID
-	gotTitle   string
-	gotContent string
-	gotRetired bool
-	gotOrder   []uuid.UUID
-	calls      int
+	gotPolicy   uuid.UUID
+	gotID       uuid.UUID
+	gotActor    uuid.UUID
+	gotTitle    string
+	gotContent  string
+	gotRetired  bool
+	gotOrder    []uuid.UUID
+	calls       int
+	checkpoints int
 }
 
 func (f *fakePolicyAppendixBackend) List(_ context.Context, policy uuid.UUID, includeRetired bool) ([]domain.PolicyAppendix, error) {
@@ -54,6 +55,13 @@ func (f *fakePolicyAppendixBackend) Create(_ context.Context, policy, actor uuid
 func (f *fakePolicyAppendixBackend) SaveDraft(_ context.Context, id, actor uuid.UUID, title, content string) (domain.PolicyAppendix, bool, error) {
 	f.calls++
 	f.gotID, f.gotActor, f.gotTitle, f.gotContent = id, actor, title, content
+	return f.result, f.changed, f.err
+}
+
+func (f *fakePolicyAppendixBackend) CheckpointDraft(_ context.Context, id, policy, actor uuid.UUID, content string) (domain.PolicyAppendix, bool, error) {
+	f.calls++
+	f.checkpoints++
+	f.gotID, f.gotPolicy, f.gotActor, f.gotContent = id, policy, actor, content
 	return f.result, f.changed, f.err
 }
 

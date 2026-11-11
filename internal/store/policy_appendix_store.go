@@ -28,6 +28,8 @@ var (
 	ErrAppendixNoDraft = errors.New("appendix has no draft to publish")
 	// ErrAppendixRetired is returned when saving or publishing a retired appendix.
 	ErrAppendixRetired = errors.New("appendix is retired; restore it first")
+	// ErrAppendixPolicyMismatch is returned when a checkpoint names a policy the appendix does not belong to.
+	ErrAppendixPolicyMismatch = errors.New("appendix does not belong to the policy")
 	// ErrAppendixReorderMismatch is returned when a reorder list is not every live appendix of the policy exactly once.
 	ErrAppendixReorderMismatch = errors.New("ordered ids must name every live appendix of the policy exactly once")
 )
@@ -225,22 +227,53 @@ func (s *PolicyAppendixStore) Create(ctx context.Context, policyID, actor uuid.U
 // row. With no draft open, a save equal to the published title and content
 // changes nothing and reports changed=false.
 func (s *PolicyAppendixStore) SaveDraft(ctx context.Context, id, actor uuid.UUID, title, contentJSON string) (domain.PolicyAppendix, bool, error) {
+	return s.saveDraft(ctx, id, uuid.Nil, actor, &title, contentJSON)
+}
+
+// CheckpointDraft saves the text the collab room holds, for the person editing.
+// It is SaveDraft without a title: an open draft keeps its own, and a new draft
+// takes the published row's. policyID must be the appendix's policy
+// (ErrAppendixPolicyMismatch otherwise). Content equal to the published row
+// with no draft open makes no draft and reports changed=false.
+func (s *PolicyAppendixStore) CheckpointDraft(ctx context.Context, id, policyID, actor uuid.UUID, contentJSON string) (domain.PolicyAppendix, bool, error) {
+	return s.saveDraft(ctx, id, policyID, actor, nil, contentJSON)
+}
+
+// saveDraft is the save-draft path SaveDraft and CheckpointDraft share. A nil
+// title keeps the open draft's title, or takes the published row's for a new
+// draft. A non-nil policyID must be the appendix's policy.
+func (s *PolicyAppendixStore) saveDraft(ctx context.Context, id, policyID, actor uuid.UUID, title *string, contentJSON string) (domain.PolicyAppendix, bool, error) {
 	changed := false
 	a, err := s.withAppendix(ctx, id, func(tx pgx.Tx, all []domain.PolicyAppendix, at int) error {
 		cur := all[at]
+		if policyID != uuid.Nil && cur.PolicyID != policyID {
+			return ErrAppendixPolicyMismatch
+		}
 		if !cur.Live() {
 			return ErrAppendixRetired
 		}
 		if d := cur.Draft(); d != nil {
+			t := d.Title
+			if title != nil {
+				t = *title
+			}
 			changed = true
 			_, err := tx.Exec(ctx,
 				`UPDATE policy_appendix_versions
 				    SET title=$2, content_json=$3::jsonb, updated_at=now(), updated_by=$4,
 				        editors = CASE WHEN $4 = ANY(editors) THEN editors ELSE array_append(editors, $4) END
-				  WHERE id=$1`, d.ID, title, contentJSON, actor)
+				  WHERE id=$1`, d.ID, t, contentJSON, actor)
 			return err
 		}
-		if p := cur.Published(); p != nil && p.Same(title, contentJSON) {
+		p := cur.Published()
+		t := ""
+		switch {
+		case title != nil:
+			t = *title
+		case p != nil:
+			t = p.Title
+		}
+		if p != nil && p.Same(t, contentJSON) {
 			return nil // only a change of title or content makes a draft
 		}
 		changed = true
@@ -252,7 +285,7 @@ func (s *PolicyAppendixStore) SaveDraft(ctx context.Context, id, actor uuid.UUID
 			`INSERT INTO policy_appendix_versions
 			   (appendix_id, version_no, state, title, content_json, created_by, updated_by, editors)
 			 VALUES ($1, $2, 'DRAFT', $3, $4::jsonb, $5, $5, ARRAY[$5]::uuid[])`,
-			id, next, title, contentJSON, actor)
+			id, next, t, contentJSON, actor)
 		return err
 	})
 	if err != nil {

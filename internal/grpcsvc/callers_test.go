@@ -106,6 +106,10 @@ func TestCallerPolicyCollab(t *testing.T) {
 		corev1.CategoryService_GetCategory_FullMethodName:      workloadidentity.Self,
 		corev1.PolicyService_GetPolicy_FullMethodName:          workloadidentity.Self,
 		corev1.PolicyService_UpdateDraftContent_FullMethodName: workloadidentity.OnBehalf,
+		// core#87: the appendix room resolves an appendix's policy to issue a room token.
+		corev1.PolicyAppendixService_GetPolicyAppendix_FullMethodName: workloadidentity.Self,
+		// core#87: the appendix room checkpoints on behalf of the editing user.
+		corev1.PolicyAppendixService_CheckpointAppendixDraft_FullMethodName: workloadidentity.OnBehalf,
 	})
 }
 

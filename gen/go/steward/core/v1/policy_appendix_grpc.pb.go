@@ -30,6 +30,7 @@ const (
 	PolicyAppendixService_RetireAppendix_FullMethodName          = "/steward.core.v1.PolicyAppendixService/RetireAppendix"
 	PolicyAppendixService_RestoreAppendix_FullMethodName         = "/steward.core.v1.PolicyAppendixService/RestoreAppendix"
 	PolicyAppendixService_ReorderPolicyAppendices_FullMethodName = "/steward.core.v1.PolicyAppendixService/ReorderPolicyAppendices"
+	PolicyAppendixService_CheckpointAppendixDraft_FullMethodName = "/steward.core.v1.PolicyAppendixService/CheckpointAppendixDraft"
 	PolicyAppendixService_DiffPolicyAppendix_FullMethodName      = "/steward.core.v1.PolicyAppendixService/DiffPolicyAppendix"
 )
 
@@ -47,6 +48,7 @@ type PolicyAppendixServiceClient interface {
 	RetireAppendix(ctx context.Context, in *RetireAppendixRequest, opts ...grpc.CallOption) (*RetireAppendixResponse, error)
 	RestoreAppendix(ctx context.Context, in *RestoreAppendixRequest, opts ...grpc.CallOption) (*RestoreAppendixResponse, error)
 	ReorderPolicyAppendices(ctx context.Context, in *ReorderPolicyAppendicesRequest, opts ...grpc.CallOption) (*ReorderPolicyAppendicesResponse, error)
+	CheckpointAppendixDraft(ctx context.Context, in *CheckpointAppendixDraftRequest, opts ...grpc.CallOption) (*CheckpointAppendixDraftResponse, error)
 	DiffPolicyAppendix(ctx context.Context, in *DiffPolicyAppendixRequest, opts ...grpc.CallOption) (*DiffPolicyAppendixResponse, error)
 }
 
@@ -138,6 +140,16 @@ func (c *policyAppendixServiceClient) ReorderPolicyAppendices(ctx context.Contex
 	return out, nil
 }
 
+func (c *policyAppendixServiceClient) CheckpointAppendixDraft(ctx context.Context, in *CheckpointAppendixDraftRequest, opts ...grpc.CallOption) (*CheckpointAppendixDraftResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CheckpointAppendixDraftResponse)
+	err := c.cc.Invoke(ctx, PolicyAppendixService_CheckpointAppendixDraft_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *policyAppendixServiceClient) DiffPolicyAppendix(ctx context.Context, in *DiffPolicyAppendixRequest, opts ...grpc.CallOption) (*DiffPolicyAppendixResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(DiffPolicyAppendixResponse)
@@ -162,6 +174,7 @@ type PolicyAppendixServiceServer interface {
 	RetireAppendix(context.Context, *RetireAppendixRequest) (*RetireAppendixResponse, error)
 	RestoreAppendix(context.Context, *RestoreAppendixRequest) (*RestoreAppendixResponse, error)
 	ReorderPolicyAppendices(context.Context, *ReorderPolicyAppendicesRequest) (*ReorderPolicyAppendicesResponse, error)
+	CheckpointAppendixDraft(context.Context, *CheckpointAppendixDraftRequest) (*CheckpointAppendixDraftResponse, error)
 	DiffPolicyAppendix(context.Context, *DiffPolicyAppendixRequest) (*DiffPolicyAppendixResponse, error)
 	mustEmbedUnimplementedPolicyAppendixServiceServer()
 }
@@ -196,6 +209,9 @@ func (UnimplementedPolicyAppendixServiceServer) RestoreAppendix(context.Context,
 }
 func (UnimplementedPolicyAppendixServiceServer) ReorderPolicyAppendices(context.Context, *ReorderPolicyAppendicesRequest) (*ReorderPolicyAppendicesResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ReorderPolicyAppendices not implemented")
+}
+func (UnimplementedPolicyAppendixServiceServer) CheckpointAppendixDraft(context.Context, *CheckpointAppendixDraftRequest) (*CheckpointAppendixDraftResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CheckpointAppendixDraft not implemented")
 }
 func (UnimplementedPolicyAppendixServiceServer) DiffPolicyAppendix(context.Context, *DiffPolicyAppendixRequest) (*DiffPolicyAppendixResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method DiffPolicyAppendix not implemented")
@@ -365,6 +381,24 @@ func _PolicyAppendixService_ReorderPolicyAppendices_Handler(srv interface{}, ctx
 	return interceptor(ctx, in, info, handler)
 }
 
+func _PolicyAppendixService_CheckpointAppendixDraft_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CheckpointAppendixDraftRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PolicyAppendixServiceServer).CheckpointAppendixDraft(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PolicyAppendixService_CheckpointAppendixDraft_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PolicyAppendixServiceServer).CheckpointAppendixDraft(ctx, req.(*CheckpointAppendixDraftRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _PolicyAppendixService_DiffPolicyAppendix_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(DiffPolicyAppendixRequest)
 	if err := dec(in); err != nil {
@@ -421,6 +455,10 @@ var PolicyAppendixService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ReorderPolicyAppendices",
 			Handler:    _PolicyAppendixService_ReorderPolicyAppendices_Handler,
+		},
+		{
+			MethodName: "CheckpointAppendixDraft",
+			Handler:    _PolicyAppendixService_CheckpointAppendixDraft_Handler,
 		},
 		{
 			MethodName: "DiffPolicyAppendix",
