@@ -103,8 +103,8 @@ func (s *CategoryStore) Create(ctx context.Context, g domain.Category) (domain.C
 			}
 			_, err := tx.Exec(ctx, `
 				INSERT INTO category_rules
-				  (category_id, ordinal, subject_kind, subject_ref, grant_read, grant_ack, grant_approve, grant_author)
-				VALUES ($1, 1, 'everyone', '', 'allow', '', '', '')`, g.ID)
+				  (category_id, ordinal, subject_kind, subject_ref, grant_read, grant_ack, grant_approve, grant_author, grant_manage)
+				VALUES ($1, 1, 'everyone', '', 'allow', '', '', '', '')`, g.ID)
 			return err
 		})
 		if err == nil {
@@ -908,7 +908,7 @@ func (s *CategoryStore) Subtree(ctx context.Context, rootID uuid.UUID) ([]domain
 // GetCategoryRuleset returns a category's rules in order; never nil.
 func (s *CategoryStore) GetCategoryRuleset(ctx context.Context, categoryID uuid.UUID) ([]domain.CategoryRule, error) {
 	rows, err := s.db.Querier().Query(ctx, `
-		SELECT ordinal, subject_kind, subject_ref, grant_read, grant_ack, grant_approve, grant_author
+		SELECT ordinal, subject_kind, subject_ref, grant_read, grant_ack, grant_approve, grant_author, grant_manage
 		FROM category_rules WHERE category_id = $1 ORDER BY ordinal`, categoryID)
 	if err != nil {
 		return nil, err
@@ -917,7 +917,7 @@ func (s *CategoryStore) GetCategoryRuleset(ctx context.Context, categoryID uuid.
 	var out []domain.CategoryRule
 	for rows.Next() {
 		var r domain.CategoryRule
-		if err := rows.Scan(&r.Ordinal, &r.SubjectKind, &r.SubjectRef, &r.Read, &r.Ack, &r.Approve, &r.Author); err != nil {
+		if err := rows.Scan(&r.Ordinal, &r.SubjectKind, &r.SubjectRef, &r.Read, &r.Ack, &r.Approve, &r.Author, &r.Manage); err != nil {
 			return nil, err
 		}
 		out = append(out, r)
@@ -941,9 +941,9 @@ func (s *CategoryStore) SetCategoryRuleset(ctx context.Context, categoryID uuid.
 		for i, r := range rules {
 			if _, err := tx.Exec(ctx, `
 				INSERT INTO category_rules
-				  (category_id, ordinal, subject_kind, subject_ref, grant_read, grant_ack, grant_approve, grant_author)
-				VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-				categoryID, i+1, r.SubjectKind, r.SubjectRef, r.Read, r.Ack, r.Approve, r.Author); err != nil {
+				  (category_id, ordinal, subject_kind, subject_ref, grant_read, grant_ack, grant_approve, grant_author, grant_manage)
+				VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+				categoryID, i+1, r.SubjectKind, r.SubjectRef, r.Read, r.Ack, r.Approve, r.Author, r.Manage); err != nil {
 				return err
 			}
 		}
@@ -1035,7 +1035,7 @@ type PurgedCategoryRule struct {
 // purgeUserRuleColumns is shared by the preview and the delete, so both report
 // the same rows.
 const purgeUserRuleColumns = `category_id, ordinal, subject_kind, subject_ref,
-	grant_read, grant_ack, grant_approve, grant_author`
+	grant_read, grant_ack, grant_approve, grant_author, grant_manage`
 
 // PurgeUserCategoryRules removes every user-subject rule naming userID, across
 // all categories, in one transaction, and returns what it removed.
@@ -1129,7 +1129,7 @@ func scanPurgedRules(rows pgx.Rows) ([]PurgedCategoryRule, error) {
 	for rows.Next() {
 		var p PurgedCategoryRule
 		if err := rows.Scan(&p.CategoryID, &p.Rule.Ordinal, &p.Rule.SubjectKind, &p.Rule.SubjectRef,
-			&p.Rule.Read, &p.Rule.Ack, &p.Rule.Approve, &p.Rule.Author); err != nil {
+			&p.Rule.Read, &p.Rule.Ack, &p.Rule.Approve, &p.Rule.Author, &p.Rule.Manage); err != nil {
 			return nil, fmt.Errorf("CategoryStore.PurgeUserCategoryRules scan: %w", err)
 		}
 		out = append(out, p)

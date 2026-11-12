@@ -48,3 +48,19 @@ func TestValidateCategoryRulesRefusesWithTheAuthzCode(t *testing.T) {
 		require.Equal(t, "1", apperr.Metadata(err)["rule"], name)
 	}
 }
+
+func TestValidateCategoryRulesAcceptsARuleWithOnlyManage(t *testing.T) {
+	require.NoError(t, domain.ValidateCategoryRules("Facilities", []domain.CategoryRule{
+		{SubjectKind: "group", SubjectRef: "doc-managers", Manage: "allow"},
+		{SubjectKind: "user", SubjectRef: "8b0c7a52-6f1e-4c55-9d3a-2f4b1c0e9a77", Manage: "deny"},
+	}))
+}
+
+func TestValidateCategoryRulesRefusesAnUnknownManageGrant(t *testing.T) {
+	err := domain.ValidateCategoryRules("Facilities", []domain.CategoryRule{{SubjectKind: "everyone", Manage: "maybe"}})
+	require.True(t, errors.Is(err, stewardauthz.ErrInvalidRule))
+	code, _ := apperr.Code(err)
+	require.Equal(t, stewardauthz.CodeInvalidRule, code)
+	require.Equal(t, "grant", apperr.Metadata(err)["problem"])
+	require.Equal(t, "1", apperr.Metadata(err)["rule"])
+}

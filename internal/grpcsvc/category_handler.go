@@ -795,6 +795,7 @@ func categoryRuleFromProto(p *corev1.CategoryRule) (domain.CategoryRule, error) 
 		Ack:         grantFromProto(p.GetAck()),
 		Approve:     grantFromProto(p.GetApprove()),
 		Author:      grantFromProto(p.GetAuthor()),
+		Manage:      grantFromProto(p.GetManage()),
 	}, nil
 }
 
@@ -806,6 +807,7 @@ func categoryRuleToProto(r domain.CategoryRule) *corev1.CategoryRule {
 		Ack:         grantToProto(r.Ack),
 		Approve:     grantToProto(r.Approve),
 		Author:      grantToProto(r.Author),
+		Manage:      grantToProto(r.Manage),
 	}
 }
 
@@ -898,6 +900,7 @@ func ruleGrantsEqual(a, b domain.CategoryRule) bool {
 		a.Ack == b.Ack &&
 		a.Approve == b.Approve &&
 		a.Author == b.Author &&
+		a.Manage == b.Manage &&
 		a.Ordinal == b.Ordinal
 }
 
@@ -911,6 +914,7 @@ func categoryRuleAttrs(catID uuid.UUID, r domain.CategoryRule) map[string]string
 		"ack":          grantAudit(r.Ack),
 		"approve":      grantAudit(r.Approve),
 		"author":       grantAudit(r.Author),
+		"manage":       grantAudit(r.Manage),
 	}
 }
 
@@ -980,6 +984,7 @@ func (h *CategoryHandler) emitCategoryRuleAudit(ctx context.Context, catID uuid.
 				attrs["prev_ack"] = grantAudit(olds[i].Ack)
 				attrs["prev_approve"] = grantAudit(olds[i].Approve)
 				attrs["prev_author"] = grantAudit(olds[i].Author)
+				attrs["prev_manage"] = grantAudit(olds[i].Manage)
 				emit("category_rule.updated", attrs)
 			}
 		}

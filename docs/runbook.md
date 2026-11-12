@@ -37,7 +37,7 @@ is reused for 5 seconds.
 | --- | --- |
 | `Code 4001: Internal Error` from any RPC | A store call failed. The log line with the same trace id names the `op`. |
 | `CATEGORY_NOT_DELETABLE` | The category or a subcategory still holds documents: move or delete them first. |
-| `INVALID_CATEGORY_RULE` | The rule named in the message has no subject, a subject where none belongs, or an unknown grant. |
+| `INVALID_CATEGORY_RULE` | The rule named in the message has no subject, a subject where none belongs, or an unknown grant (the `manage` cell included). |
 | The email-service key can't be read | `CORE_SETTINGS_KEY` changed since the key was saved. Restore the old key, or save the email-service key again. |
 | Act-as events name the target, not the admin | The call didn't come from a caller with on-behalf access: check the gateway's token and that `steward/steward-gateway` is in `WORKLOAD_ALLOWED_SERVICEACCOUNTS`. |
 | `Unauthenticated: no workload token` | The caller sent no `authorization` metadata: check its `WORKLOAD_TOKEN_FILE` and the projected token mount (audience `steward`). |
