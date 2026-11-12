@@ -423,21 +423,103 @@ func (h *CategoryHandler) SetGovernance(ctx context.Context, req *corev1.SetGove
 		v := req.GetAckEveryone()
 		ackEveryonePtr = &v
 	}
+	// The old governance is read before the write, so the audit event can say what changed.
+	var before domain.Category
+	if h.auditor != nil {
+		before, err = h.store.Get(ctx, id)
+		if err != nil {
+			return nil, status.Errorf(codes.Internal, "get category: %v", err)
+		}
+	}
 	g, err := h.store.SetGovernance(ctx, id, owners, audienceGroupIDsPtr, ack, cadence, reviewDate, exclusionGroupIDsPtr, ackEveryonePtr)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "set governance: %v", err)
 	}
 	if h.auditor != nil {
-		_ = h.auditor.Emit(ctx, audit.Event{
-			Tier:        audit.TierAudit,
-			Action:      "category.governance_updated",
-			Subject:     "category:" + g.ID.String(),
-			GroupID:     g.ID.String(),
-			ActorUserID: req.GetActorUserId(),
-		})
+		if attrs, changed := governanceAuditAttrs(before, g); changed {
+			actor := req.GetActorUserId()
+			if actor == "" {
+				actor = actorFromContext(ctx)
+			}
+			_ = h.auditor.Emit(ctx, audit.Event{
+				Tier:        audit.TierAudit,
+				Action:      "category.governance_updated",
+				Subject:     "category:" + g.ID.String(),
+				GroupID:     g.ID.String(),
+				ActorUserID: actor,
+				Attributes:  attrs,
+			})
+		}
 	}
 	h.emitObligationChangedForCategory(ctx, g.ID)
 	return &corev1.SetGovernanceResponse{Category: categoryToProto(g)}, nil
+}
+
+// governanceAuditAttrs returns the audit attributes of a governance change: every
+// governance key with its new value, and its old value as prev_<key>, as the
+// category_rule events do. changed is false when nothing differs, and then no
+// event is emitted. Values are user uuids, group ids, enums, a bool and a date,
+// never a name or an email. Lists are sorted and comma-joined, "none" is an
+// explicit empty value and "inherit" is a value that is not set here.
+func governanceAuditAttrs(before, after domain.Category) (attrs map[string]string, changed bool) {
+	type field struct{ key, old, new string }
+	fields := []field{
+		{"owners", ownersAudit(before.Owners), ownersAudit(after.Owners)},
+		{"audience_group_ids", groupIDsAudit(before.AudienceGroupIDs), groupIDsAudit(after.AudienceGroupIDs)},
+		{"exclusion_group_ids", groupIDsAudit(before.ExclusionGroupIDs), groupIDsAudit(after.ExclusionGroupIDs)},
+		{"ack_triggers", string(before.AckTriggers), string(after.AckTriggers)},
+		{"review_cadence", string(before.ReviewCadence), string(after.ReviewCadence)},
+		{"review_date", reviewDateAudit(before.ReviewDate), reviewDateAudit(after.ReviewDate)},
+		{"ack_everyone", ackEveryoneAudit(before.AckEveryone), ackEveryoneAudit(after.AckEveryone)},
+	}
+	attrs = make(map[string]string, 2*len(fields)+1)
+	attrs["category_id"] = after.ID.String()
+	for _, f := range fields {
+		attrs[f.key] = f.new
+		attrs["prev_"+f.key] = f.old
+		if f.old != f.new {
+			changed = true
+		}
+	}
+	return attrs, changed
+}
+
+func ownersAudit(owners []uuid.UUID) string {
+	ids := make([]string, 0, len(owners))
+	for _, o := range owners {
+		ids = append(ids, o.String())
+	}
+	return joinAuditList(ids)
+}
+
+func groupIDsAudit(ids *[]string) string {
+	if ids == nil {
+		return "inherit"
+	}
+	return joinAuditList(*ids)
+}
+
+func joinAuditList(ids []string) string {
+	if len(ids) == 0 {
+		return "none"
+	}
+	sorted := append([]string(nil), ids...)
+	sort.Strings(sorted)
+	return strings.Join(sorted, ",")
+}
+
+func reviewDateAudit(t *time.Time) string {
+	if t == nil {
+		return "none"
+	}
+	return t.UTC().Format("2006-01-02")
+}
+
+func ackEveryoneAudit(v *bool) string {
+	if v == nil {
+		return "inherit"
+	}
+	return strconv.FormatBool(*v)
 }
 
 // SetCategoryDefaults handles CategoryService.SetCategoryDefaults.

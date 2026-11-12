@@ -32,6 +32,10 @@ process only, and the empty name and `readiness` fail while Postgres or RabbitMQ
 Actions are dotted verbs such as `category.created`, `category_rule.updated`, `policy.published`,
 `appendix.created`, `appendix.saved`, `appendix.published`, `appendix.retired`, `appendix.restored`, `appendix.reordered`
 and `email_service_config.updated`. No event carries a secret or document content.
+`category.governance_updated` is emitted only when governance changed. It carries the new value of
+`owners`, `audience_group_ids`, `exclusion_group_ids`, `ack_triggers`, `review_cadence`,
+`review_date` and `ack_everyone`, and the old value of each as `prev_<key>`. Owners are user uuids,
+lists are sorted and comma-joined, `none` is an explicit empty value and `inherit` is not set here.
 
 **Lifecycle.** JSON events on the `jobs` topic exchange, for the services that act on documents:
 
