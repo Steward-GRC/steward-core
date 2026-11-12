@@ -931,6 +931,76 @@ func (s *CategoryStore) GetCategoryRuleset(ctx context.Context, categoryID uuid.
 	return out, nil
 }
 
+// EffectiveLevel is one category in an effective ruleset: its owners as stored
+// and its own rules in ordinal order.
+type EffectiveLevel struct {
+	CategoryID uuid.UUID
+	Name       string
+	Owners     []uuid.UUID
+	Rules      []domain.CategoryRule
+}
+
+// GetEffectiveRuleset returns categoryID and each ancestor up to the top-level
+// one, nearest first, with every level's owners and rules, from one recursive
+// query so the whole chain reads from one snapshot. The walk stops at
+// maxCategoryDepth levels and never revisits a category, so a broken or cyclic
+// parent chain ends. A category with no rules is still a level, with empty
+// rules. It returns ErrCategoryNotFound for an unknown category.
+func (s *CategoryStore) GetEffectiveRuleset(ctx context.Context, categoryID uuid.UUID) ([]EffectiveLevel, error) {
+	rows, err := s.db.Querier().Query(ctx, `
+		WITH RECURSIVE chain AS (
+		  SELECT id, parent_id, name, owners, 0 AS depth, ARRAY[id] AS seen
+		  FROM categories WHERE id = $1
+		  UNION ALL
+		  SELECT g.id, g.parent_id, g.name, g.owners, c.depth + 1, c.seen || g.id
+		  FROM categories g JOIN chain c ON g.id = c.parent_id
+		  WHERE c.depth + 1 < $2 AND NOT g.id = ANY(c.seen)
+		)
+		SELECT c.id, c.name, c.owners,
+		       COALESCE(r.ordinal, 0), COALESCE(r.subject_kind, ''), COALESCE(r.subject_ref, ''),
+		       COALESCE(r.grant_read, ''), COALESCE(r.grant_ack, ''), COALESCE(r.grant_approve, ''),
+		       COALESCE(r.grant_author, ''), COALESCE(r.grant_manage, '')
+		FROM chain c LEFT JOIN category_rules r ON r.category_id = c.id
+		ORDER BY c.depth, r.ordinal`, categoryID, maxCategoryDepth)
+	if err != nil {
+		return nil, fmt.Errorf("CategoryStore.GetEffectiveRuleset: %w", err)
+	}
+	defer rows.Close()
+
+	var out []EffectiveLevel
+	for rows.Next() {
+		var (
+			id     uuid.UUID
+			name   string
+			owners pgtype.FlatArray[uuid.UUID]
+			r      domain.CategoryRule
+		)
+		if err := rows.Scan(&id, &name, &owners, &r.Ordinal, &r.SubjectKind, &r.SubjectRef,
+			&r.Read, &r.Ack, &r.Approve, &r.Author, &r.Manage); err != nil {
+			return nil, fmt.Errorf("CategoryStore.GetEffectiveRuleset scan: %w", err)
+		}
+		if n := len(out); n == 0 || out[n-1].CategoryID != id {
+			lv := EffectiveLevel{CategoryID: id, Name: name, Owners: []uuid.UUID(owners), Rules: []domain.CategoryRule{}}
+			if lv.Owners == nil {
+				lv.Owners = []uuid.UUID{}
+			}
+			out = append(out, lv)
+		}
+		if r.Ordinal == 0 { // the LEFT JOIN found no rule for this level
+			continue
+		}
+		lv := &out[len(out)-1]
+		lv.Rules = append(lv.Rules, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("CategoryStore.GetEffectiveRuleset: %w", err)
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("CategoryStore.GetEffectiveRuleset %s: %w", categoryID, ErrCategoryNotFound)
+	}
+	return out, nil
+}
+
 // SetCategoryRuleset replaces a category's rules, numbering them from 1, and
 // returns what was stored.
 func (s *CategoryStore) SetCategoryRuleset(ctx context.Context, categoryID uuid.UUID, rules []domain.CategoryRule) ([]domain.CategoryRule, error) {

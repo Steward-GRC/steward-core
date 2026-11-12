@@ -81,10 +81,11 @@ func TestCallerPolicyDelivery(t *testing.T) {
 
 func TestCallerPolicyWorkflow(t *testing.T) {
 	requireCallerMethods(t, CallerWorkflow, map[string]workloadidentity.Access{
-		corev1.CategoryService_GetCategory_FullMethodName:    workloadidentity.Self,
-		corev1.PolicyService_GetPolicy_FullMethodName:        workloadidentity.Self,
-		corev1.PolicyService_GetPolicyVersion_FullMethodName: workloadidentity.Self,
-		corev1.PolicyService_SetVersionStatus_FullMethodName: workloadidentity.Self,
+		corev1.CategoryService_GetCategory_FullMethodName:         workloadidentity.Self,
+		corev1.CategoryService_GetEffectiveRuleset_FullMethodName: workloadidentity.Self,
+		corev1.PolicyService_GetPolicy_FullMethodName:             workloadidentity.Self,
+		corev1.PolicyService_GetPolicyVersion_FullMethodName:      workloadidentity.Self,
+		corev1.PolicyService_SetVersionStatus_FullMethodName:      workloadidentity.Self,
 	})
 }
 
@@ -92,6 +93,7 @@ func TestCallerPolicyObligations(t *testing.T) {
 	requireCallerMethods(t, CallerObligations, map[string]workloadidentity.Access{
 		corev1.CategoryService_GetCategory_FullMethodName:                     workloadidentity.Self,
 		corev1.CategoryService_GetCategoryRuleset_FullMethodName:              workloadidentity.Self,
+		corev1.CategoryService_GetEffectiveRuleset_FullMethodName:             workloadidentity.Self,
 		corev1.PolicyService_GetPolicy_FullMethodName:                         workloadidentity.Self,
 		corev1.PolicyService_GetPolicyVersion_FullMethodName:                  workloadidentity.Self,
 		corev1.PolicyService_ListPolicyVersions_FullMethodName:                workloadidentity.Self,
@@ -103,9 +105,10 @@ func TestCallerPolicyObligations(t *testing.T) {
 
 func TestCallerPolicyCollab(t *testing.T) {
 	requireCallerMethods(t, CallerCollab, map[string]workloadidentity.Access{
-		corev1.CategoryService_GetCategory_FullMethodName:      workloadidentity.Self,
-		corev1.PolicyService_GetPolicy_FullMethodName:          workloadidentity.Self,
-		corev1.PolicyService_UpdateDraftContent_FullMethodName: workloadidentity.OnBehalf,
+		corev1.CategoryService_GetCategory_FullMethodName:         workloadidentity.Self,
+		corev1.CategoryService_GetEffectiveRuleset_FullMethodName: workloadidentity.Self,
+		corev1.PolicyService_GetPolicy_FullMethodName:             workloadidentity.Self,
+		corev1.PolicyService_UpdateDraftContent_FullMethodName:    workloadidentity.OnBehalf,
 		// core#87: the appendix room resolves an appendix's policy to issue a room token.
 		corev1.PolicyAppendixService_GetPolicyAppendix_FullMethodName: workloadidentity.Self,
 		// core#87: the appendix room checkpoints on behalf of the editing user.
@@ -123,6 +126,26 @@ func TestCallerPolicyIdentity(t *testing.T) {
 		corev1.PolicyService_GetPolicy_FullMethodName:                workloadidentity.OnBehalf,
 		corev1.PolicyService_GetPolicyVersion_FullMethodName:         workloadidentity.OnBehalf,
 	})
+}
+
+// GetEffectiveRuleset is the chain read the access engine's callers share:
+// the gateway on behalf of a user, workflow, obligations and collab as
+// themselves. delivery, identity and an unlisted caller are refused.
+func TestCallerPolicyGetEffectiveRuleset(t *testing.T) {
+	p := CallerPolicy()
+	m := corev1.CategoryService_GetEffectiveRuleset_FullMethodName
+	for caller, want := range map[string]workloadidentity.Access{
+		CallerGateway: workloadidentity.OnBehalf, CallerWorkflow: workloadidentity.Self,
+		CallerObligations: workloadidentity.Self, CallerCollab: workloadidentity.Self,
+	} {
+		got, ok := p.Lookup(m, caller)
+		require.True(t, ok, "%s must be allowed", caller)
+		require.Equal(t, want, got, caller)
+	}
+	for _, caller := range []string{CallerDelivery, CallerIdentity, "ai", "reporting"} {
+		_, ok := p.Lookup(m, caller)
+		require.False(t, ok, "%s must be refused", caller)
+	}
 }
 
 func TestCallerPolicyListsNoOtherCaller(t *testing.T) {
