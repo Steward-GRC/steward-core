@@ -87,20 +87,46 @@ func parseContent(contentJSON string) (map[string]string, error) {
 }
 
 // extractLexicalSections walks a Lexical root's top-level children and groups
-// their plain text into sections. Each heading starts a new section keyed by a
-// slug of the heading text (with the heading text kept as the first line so it
-// is retrievable), and every block up to the next heading is appended to it.
-// Content before the first heading (or a heading-less document) lands under
-// the "body" key, which also serves as the single-section fallback.
+// their plain text into sections keyed as lexicalBlocks keys them. Each section's
+// text keeps the heading as its first line so it is retrievable.
 func extractLexicalSections(root *lexicalNode) map[string]string {
 	out := map[string]string{}
+	for _, b := range lexicalBlocks(root) {
+		out[b.Key] = b.Text
+	}
+	return out
+}
+
+// ContentBlock is one block of a document: a heading and the text up to the next heading, or the
+// text before the first heading.
+type ContentBlock struct {
+	Key   string // stable block key, see SplitBlocks
+	Title string // the heading text, "Introduction" for the leading block
+	Text  string // the heading as the first line, then the block's text
+}
+
+const (
+	introBlockKey      = "body"
+	introBlockTitle    = "Introduction"
+	untitledBlockTitle = "Untitled section"
+)
+
+// lexicalBlocks splits a Lexical root's top-level children into ordered blocks. Each heading
+// starts a new block keyed by a slug of the heading text (an empty heading is keyed "section"); a
+// repeated key gets a numeric suffix by order ("notes", "notes-2", "notes-3") so no block is
+// overwritten. Content before the first heading (or a heading-less document) is the "body" block,
+// titled "Introduction", and exists only when it has text. "body" is reserved even when empty, so
+// a heading that slugs to "body" is keyed "body-2".
+func lexicalBlocks(root *lexicalNode) []ContentBlock {
+	var out []ContentBlock
 	used := map[string]int{}
-	curKey := reserveSectionKey("body", used)
+	curKey := reserveSectionKey(introBlockKey, used)
+	curTitle := introBlockTitle
 	var buf strings.Builder
 
 	flush := func() {
 		if t := strings.TrimSpace(buf.String()); t != "" {
-			out[curKey] = t
+			out = append(out, ContentBlock{Key: curKey, Title: curTitle, Text: t})
 		}
 		buf.Reset()
 	}
@@ -111,6 +137,10 @@ func extractLexicalSections(root *lexicalNode) map[string]string {
 			flush()
 			title := strings.TrimSpace(nodeText(c))
 			curKey = reserveSectionKey(slugify(title), used)
+			curTitle = title
+			if curTitle == "" {
+				curTitle = untitledBlockTitle
+			}
 			buf.WriteString(title)
 			continue
 		}
@@ -125,6 +155,37 @@ func extractLexicalSections(root *lexicalNode) map[string]string {
 	}
 	flush()
 	return out
+}
+
+// SplitBlocks decodes serialized content into ordered blocks, with the same keys parseContent
+// gives sections. The older {"sections": {...}} envelope has no order or titles, so its entries
+// come back sorted by key with the key as the title. Empty content has no blocks; unparseable
+// content is an error.
+func SplitBlocks(contentJSON string) ([]ContentBlock, error) {
+	if contentJSON == "" {
+		return nil, nil
+	}
+	var lc lexicalContent
+	if err := json.Unmarshal([]byte(contentJSON), &lc); err == nil && lc.Sections != nil {
+		keys := make([]string, 0, len(lc.Sections))
+		for k := range lc.Sections {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		out := make([]ContentBlock, 0, len(keys))
+		for _, k := range keys {
+			out = append(out, ContentBlock{Key: k, Title: k, Text: lc.Sections[k]})
+		}
+		return out, nil
+	}
+	var doc lexicalDoc
+	if err := json.Unmarshal([]byte(contentJSON), &doc); err != nil {
+		return nil, fmt.Errorf("parse content: %w", err)
+	}
+	if doc.Root == nil {
+		return nil, nil
+	}
+	return lexicalBlocks(doc.Root), nil
 }
 
 // nodeText returns the concatenated plain text of a Lexical node subtree.
@@ -331,4 +392,72 @@ func DiffVersions(fromJSON, toJSON string, sectionDefs []Section, isTemplateMigr
 		})
 	}
 	return result, nil
+}
+
+// DiffBlocks diffs two versions that are not both pinned to a template version (a freeform
+// version, or a freeform one against a templated one), block by block from their content alone:
+// each side is split with SplitBlocks and blocks are matched by key. The result has one entry per
+// block on either side, in the "to" order; a block only the "from" side has (removed) sits right
+// after the block it followed there, or first when nothing before it survives. Titles come from
+// the "to" side, or the "from" side for a removed block. A block diff is never boilerplate: with
+// no template sections there is nothing to call boilerplate. Because keys are slugs by order, a
+// renamed heading reads as one removed and one added block, and inserting a heading above a
+// repeated one shifts the numbered keys of the repeats.
+func DiffBlocks(fromJSON, toJSON string) ([]SectionDiff, error) {
+	from, err := SplitBlocks(fromJSON)
+	if err != nil {
+		return nil, fmt.Errorf("from content: %w", err)
+	}
+	to, err := SplitBlocks(toJSON)
+	if err != nil {
+		return nil, fmt.Errorf("to content: %w", err)
+	}
+	toByKey := make(map[string]ContentBlock, len(to))
+	for _, b := range to {
+		toByKey[b.Key] = b
+	}
+	fromByKey := make(map[string]ContentBlock, len(from))
+	for _, b := range from {
+		fromByKey[b.Key] = b
+	}
+
+	// Removed blocks, grouped under the last "from" block before them that the "to" side kept
+	// ("" for none).
+	removedAfter := map[string][]ContentBlock{}
+	anchor := ""
+	for _, b := range from {
+		if _, kept := toByKey[b.Key]; kept {
+			anchor = b.Key
+			continue
+		}
+		removedAfter[anchor] = append(removedAfter[anchor], b)
+	}
+
+	removed := func(b ContentBlock) SectionDiff {
+		return SectionDiff{SectionKey: b.Key, SectionTitle: b.Title, ChangeType: DiffChangeRemoved,
+			WordDiffHTML: "<del>" + b.Text + "</del>"}
+	}
+	var out []SectionDiff
+	for _, b := range removedAfter[""] {
+		out = append(out, removed(b))
+	}
+	for _, b := range to {
+		d := SectionDiff{SectionKey: b.Key, SectionTitle: b.Title}
+		prev, had := fromByKey[b.Key]
+		switch {
+		case !had:
+			d.ChangeType = DiffChangeAdded
+			d.WordDiffHTML = "<ins>" + b.Text + "</ins>"
+		case prev.Text == b.Text:
+			d.ChangeType = DiffChangeUnchanged
+		default:
+			d.ChangeType = DiffChangeChanged
+			d.WordDiffHTML = wordDiffHTML(prev.Text, b.Text)
+		}
+		out = append(out, d)
+		for _, r := range removedAfter[b.Key] {
+			out = append(out, removed(r))
+		}
+	}
+	return out, nil
 }
