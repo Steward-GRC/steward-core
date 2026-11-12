@@ -290,6 +290,15 @@ func ExtractSections(contentJSON string, sectionDefs []Section) []ExtractedSecti
 	return out
 }
 
+// diffTextEscaper escapes the three characters that can start markup or an entity. Quotes are
+// left alone: the text sits between tags, never inside an attribute.
+var diffTextEscaper = strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;")
+
+// escapeDiffText makes author text safe to put in the diff HTML, so only the <ins> and <del>
+// the diff writes are markup. The readers (the web) decode these entities back to the text.
+// Words are compared raw; this runs only when the HTML is built.
+func escapeDiffText(s string) string { return diffTextEscaper.Replace(s) }
+
 // wordDiffHTML returns an HTML string with <del> and <ins> tags around changed words.
 func wordDiffHTML(from, to string) string {
 	fromWords := strings.Fields(from)
@@ -339,11 +348,11 @@ func wordDiffHTML(from, to string) string {
 	for _, o := range ops {
 		switch o.kind {
 		case "eq":
-			sb.WriteString(o.word + " ")
+			sb.WriteString(escapeDiffText(o.word) + " ")
 		case "ins":
-			sb.WriteString("<ins>" + o.word + "</ins> ")
+			sb.WriteString("<ins>" + escapeDiffText(o.word) + "</ins> ")
 		case "del":
-			sb.WriteString("<del>" + o.word + "</del> ")
+			sb.WriteString("<del>" + escapeDiffText(o.word) + "</del> ")
 		}
 	}
 	return strings.TrimSpace(sb.String())
@@ -372,10 +381,10 @@ func DiffVersions(fromJSON, toJSON string, sectionDefs []Section, isTemplateMigr
 		switch {
 		case fromText == "" && toText != "":
 			ct = DiffChangeAdded
-			html = "<ins>" + toText + "</ins>"
+			html = "<ins>" + escapeDiffText(toText) + "</ins>"
 		case fromText != "" && toText == "":
 			ct = DiffChangeRemoved
-			html = "<del>" + fromText + "</del>"
+			html = "<del>" + escapeDiffText(fromText) + "</del>"
 		case fromText == toText:
 			ct = DiffChangeUnchanged
 		default:
@@ -435,7 +444,7 @@ func DiffBlocks(fromJSON, toJSON string) ([]SectionDiff, error) {
 
 	removed := func(b ContentBlock) SectionDiff {
 		return SectionDiff{SectionKey: b.Key, SectionTitle: b.Title, ChangeType: DiffChangeRemoved,
-			WordDiffHTML: "<del>" + b.Text + "</del>"}
+			WordDiffHTML: "<del>" + escapeDiffText(b.Text) + "</del>"}
 	}
 	var out []SectionDiff
 	for _, b := range removedAfter[""] {
@@ -447,7 +456,7 @@ func DiffBlocks(fromJSON, toJSON string) ([]SectionDiff, error) {
 		switch {
 		case !had:
 			d.ChangeType = DiffChangeAdded
-			d.WordDiffHTML = "<ins>" + b.Text + "</ins>"
+			d.WordDiffHTML = "<ins>" + escapeDiffText(b.Text) + "</ins>"
 		case prev.Text == b.Text:
 			d.ChangeType = DiffChangeUnchanged
 		default:
