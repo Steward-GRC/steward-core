@@ -495,6 +495,56 @@ message ReindexAllPublishedResponse {
   int32 failures = 3;
 }
 
+// SearchPoliciesRequest searches the text of published documents.
+message SearchPoliciesRequest {
+  // The words to find; every word must match, whole words, ignoring case, in the title, the
+  // number or the published text. At most 256 characters. A blank query finds nothing.
+  string query = 1;
+  // Unspecified searches policies and procedures both.
+  DocumentType document_type = 2;
+  // Page size, 1 to 100; 0 means 20.
+  int32 limit = 3;
+  // Hits to skip, from the start of the ranked list.
+  int32 offset = 4;
+}
+
+// SearchMatch is a run of a snippet's text, counted in UTF-16 code units (as JavaScript,
+// NSString and Kotlin index strings).
+message SearchMatch {
+  int32 start = 1;
+  int32 length = 2;
+}
+
+// PolicySearchSnippet is a passage of the published text, plain (no markup), with where the query
+// matched in it. A passage that runs long is cut to a window around its first match, with an
+// ellipsis at a cut end.
+message PolicySearchSnippet {
+  string text = 1;
+  repeated SearchMatch matches = 2;
+}
+
+// PolicySearchHit is one matching document.
+message PolicySearchHit {
+  Policy policy = 1;
+  // Higher is better; comparable only within one search. A hit whose title and number hold every
+  // word of the query ranks above one found in the text alone.
+  double rank = 2;
+  // True when every word of the query is in the title and number alone, which is what a reader
+  // who may not see the text can still be told about.
+  bool title_match = 3;
+  // The rank counting the title and number alone; 0 unless title_match.
+  double title_rank = 4;
+  // The matched passage of the published text. Unset when no word matched the text.
+  PolicySearchSnippet snippet = 5;
+}
+
+message SearchPoliciesResponse {
+  // Best first.
+  repeated PolicySearchHit hits = 1;
+  // True when more hits follow this page.
+  bool has_more = 2;
+}
+
 // PolicyService manages policies and procedures and their versions. Access to
 // each RPC is enforced at the gateway; actor_user_id is recorded in audit.
 service PolicyService {
@@ -538,4 +588,10 @@ service PolicyService {
   rpc ReindexPolicy(ReindexPolicyRequest) returns (ReindexPolicyResponse);
   rpc ReindexPolicyVersion(ReindexPolicyVersionRequest) returns (ReindexPolicyVersionResponse);
   rpc ReindexAllPublished(ReindexAllPublishedRequest) returns (ReindexAllPublishedResponse);
+  // SearchPolicies finds documents by the words in their title, number and published text
+  // (appendices included): never a draft, a version in review, a superseded version or a retired
+  // document. It does not decide who may read what. The hits carry published text, so the gateway
+  // filters them by the reader's read decision and shows no snippet to a reader whose content is
+  // obfuscated.
+  rpc SearchPolicies(SearchPoliciesRequest) returns (SearchPoliciesResponse);
 }
