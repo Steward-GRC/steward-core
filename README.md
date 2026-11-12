@@ -7,8 +7,8 @@ its governance, templates, policies and procedures with their versions and numbe
 libraries documents attach.
 
 - **Categories:** a tree up to three levels deep. Owners, the acknowledgement audience, review
-  cadence and the default template inherit down the tree; access rules are ordered and stored as
-  steward-authz rules.
+  cadence and the default template inherit down the tree; access rules are ordered and stored one row per rule, with a
+  cell per action (read, ack, approve, author, manage).
 - **Documents:** policies and procedures share one model: drafts, publish, versions, appendices,
   sensitivity, a number derived from the category, and a staged rename for a published document.
 - **Libraries:** contact blocks, definitions (scoped to a category) and references, attached by id

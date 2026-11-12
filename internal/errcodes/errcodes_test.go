@@ -48,7 +48,7 @@ func TestStoreUnavailableRoundTrip(t *testing.T) {
 }
 
 func TestInvalidCategoryRuleRoundTrip(t *testing.T) {
-	cause := apperr.WithMeta(errors.New("authz: invalid access rule"),
+	cause := apperr.WithMeta(errors.New("core: invalid access rule"),
 		apperr.Meta("category", "Facilities"), apperr.Meta("rule", "2"), apperr.Meta("problem", "subject"))
 	st := status.Convert(errcodes.Error(context.Background(), errcodes.InvalidCategoryRule(cause)))
 	require.Equal(t, codes.InvalidArgument, st.Code())

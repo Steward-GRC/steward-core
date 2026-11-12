@@ -6,6 +6,7 @@ toolchain go1.26.11
 
 require (
 	github.com/Bugs5382/go-apperr v1.2.1
+	github.com/Bugs5382/go-authz v1.1.0
 	github.com/Bugs5382/go-buildinfo v1.0.0
 	github.com/Bugs5382/go-grpc-actor v1.0.0
 	github.com/Bugs5382/go-log v1.3.0
@@ -15,7 +16,6 @@ require (
 	github.com/Bugs5382/go-rabbitmq v1.3.0
 	github.com/Bugs5382/go-redis v1.2.0
 	github.com/Bugs5382/go-workload-identity v1.0.0
-	github.com/Steward-GRC/steward-authz v0.0.0-20261004225933-2e7c82d1efea
 	github.com/alicebob/miniredis/v2 v2.38.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
@@ -30,7 +30,6 @@ require (
 require (
 	dario.cat/mergo v1.0.2 // indirect
 	github.com/Azure/go-ansiterm v0.0.0-20250102033503-faa5f7b0171c // indirect
-	github.com/Bugs5382/go-authz v1.0.0 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/aws/aws-sdk-go-v2 v1.47.1 // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.20 // indirect

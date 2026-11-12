@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	stewardauthz "github.com/Steward-GRC/steward-authz"
 	"sort"
 	"strconv"
 	"strings"
@@ -736,48 +735,48 @@ func (h *CategoryHandler) GetEffectiveGovernance(ctx context.Context, req *corev
 	return resp, nil
 }
 
-func grantFromProto(e corev1.GrantEffect) stewardauthz.Grant {
+func grantFromProto(e corev1.GrantEffect) domain.Grant {
 	switch e {
 	case corev1.GrantEffect_GRANT_EFFECT_ALLOW:
-		return stewardauthz.GrantAllow
+		return domain.GrantAllow
 	case corev1.GrantEffect_GRANT_EFFECT_DENY:
-		return stewardauthz.GrantDeny
+		return domain.GrantDeny
 	default:
-		return stewardauthz.GrantBlank
+		return domain.GrantBlank
 	}
 }
 
-func grantToProto(g stewardauthz.Grant) corev1.GrantEffect {
+func grantToProto(g domain.Grant) corev1.GrantEffect {
 	switch g {
-	case stewardauthz.GrantAllow:
+	case domain.GrantAllow:
 		return corev1.GrantEffect_GRANT_EFFECT_ALLOW
-	case stewardauthz.GrantDeny:
+	case domain.GrantDeny:
 		return corev1.GrantEffect_GRANT_EFFECT_DENY
 	default:
 		return corev1.GrantEffect_GRANT_EFFECT_UNSPECIFIED
 	}
 }
 
-func subjKindFromProto(k corev1.RuleSubjectKind) (stewardauthz.SubjectKind, error) {
+func subjKindFromProto(k corev1.RuleSubjectKind) (domain.SubjectKind, error) {
 	switch k {
 	case corev1.RuleSubjectKind_RULE_SUBJECT_KIND_EVERYONE:
-		return stewardauthz.SubjectEveryone, nil
+		return domain.SubjectEveryone, nil
 	case corev1.RuleSubjectKind_RULE_SUBJECT_KIND_GROUP:
-		return stewardauthz.SubjectGroup, nil
+		return domain.SubjectGroup, nil
 	case corev1.RuleSubjectKind_RULE_SUBJECT_KIND_USER:
-		return stewardauthz.SubjectUser, nil
+		return domain.SubjectUser, nil
 	default:
 		return "", fmt.Errorf("invalid subject_kind %v", k)
 	}
 }
 
-func subjKindToProto(k stewardauthz.SubjectKind) corev1.RuleSubjectKind {
+func subjKindToProto(k domain.SubjectKind) corev1.RuleSubjectKind {
 	switch k {
-	case stewardauthz.SubjectEveryone:
+	case domain.SubjectEveryone:
 		return corev1.RuleSubjectKind_RULE_SUBJECT_KIND_EVERYONE
-	case stewardauthz.SubjectGroup:
+	case domain.SubjectGroup:
 		return corev1.RuleSubjectKind_RULE_SUBJECT_KIND_GROUP
-	case stewardauthz.SubjectUser:
+	case domain.SubjectUser:
 		return corev1.RuleSubjectKind_RULE_SUBJECT_KIND_USER
 	default:
 		return corev1.RuleSubjectKind_RULE_SUBJECT_KIND_UNSPECIFIED
@@ -911,13 +910,13 @@ func (h *CategoryHandler) SetCategoryRuleset(ctx context.Context, req *corev1.Se
 // ruleSubject is a rule's identity across a replace, which re-inserts every
 // row and so changes every row id.
 type ruleSubject struct {
-	kind stewardauthz.SubjectKind
+	kind domain.SubjectKind
 	ref  string
 }
 
 // grantAudit renders an empty grant as "unset", so an audit row tells "no
 // grant" apart from "not recorded".
-func grantAudit(g stewardauthz.Grant) string {
+func grantAudit(g domain.Grant) string {
 	s := string(g)
 	if s == "" {
 		return "unset"
