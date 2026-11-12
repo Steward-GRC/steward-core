@@ -50,9 +50,9 @@ in core's allow-list (`internal/grpcsvc/callers.go`):
 | --- | --- | --- |
 | `gateway` | every method except `EmailServiceSecretService/GetEmailServiceSecret` | on behalf of the signed-in user |
 | `delivery` | `PolicyService/GetPolicy`, `GetPolicyVersion`, `DiffVersions`; `AppendixService/ListAppendices` | as itself |
-| `workflow` | `CategoryService/GetCategory`; `PolicyService/GetPolicy`, `GetPolicyVersion`, `SetVersionStatus` | as itself |
-| `obligations` | `CategoryService/GetCategory`, `GetCategoryRuleset`; `PolicyService/GetPolicy`, `GetPolicyVersion`, `ListPolicyVersions`, `ListObligatingPolicies`, `ResolvePolicyObligation`; `EmailServiceSecretService/GetEmailServiceSecret` | as itself |
-| `collab` | `CategoryService/GetCategory`, `PolicyService/GetPolicy` as itself; `PolicyService/UpdateDraftContent` on behalf of the editing user | |
+| `workflow` | `CategoryService/GetCategory`, `GetEffectiveRuleset`; `PolicyService/GetPolicy`, `GetPolicyVersion`, `SetVersionStatus` | as itself |
+| `obligations` | `CategoryService/GetCategory`, `GetCategoryRuleset`, `GetEffectiveRuleset`; `PolicyService/GetPolicy`, `GetPolicyVersion`, `ListPolicyVersions`, `ListObligatingPolicies`, `ResolvePolicyObligation`; `EmailServiceSecretService/GetEmailServiceSecret` | as itself |
+| `collab` | `CategoryService/GetCategory`, `GetEffectiveRuleset`, `PolicyService/GetPolicy` as itself; `PolicyService/UpdateDraftContent` on behalf of the editing user | |
 | `identity` | `CategoryService/PurgeUserCategoryRules`; `PolicyService/ListPoliciesByOwner`, `ReassignUserPolicies`, `GetPolicy`, `GetPolicyVersion` (account merge, delete check and preview) | on behalf of the admin running them |
 
 `ai` isn't listed yet: its calls aren't known until it's ported, so it's refused until then.

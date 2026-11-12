@@ -299,6 +299,24 @@ message GetCategoryRulesetResponse {
   repeated CategoryRule rules = 1;
 }
 
+message GetEffectiveRulesetRequest {
+  string category_id = 1;
+}
+
+// EffectiveLevel is one category in the chain: its owners as stored and its
+// own rules in ordinal order.
+message EffectiveLevel {
+  string category_id = 1;
+  string name = 2;
+  repeated string owners = 3;
+  repeated CategoryRule rules = 4;
+}
+
+message GetEffectiveRulesetResponse {
+  // The category first, then each ancestor up to the top-level one.
+  repeated EffectiveLevel levels = 1;
+}
+
 message SetCategoryRulesetRequest {
   string category_id = 1;
   repeated CategoryRule rules = 2;
@@ -354,6 +372,11 @@ service CategoryService {
   rpc SetGovernance(SetGovernanceRequest) returns (SetGovernanceResponse);
   rpc GetEffectiveGovernance(GetEffectiveGovernanceRequest) returns (GetEffectiveGovernanceResponse);
   rpc GetCategoryRuleset(GetCategoryRulesetRequest) returns (GetCategoryRulesetResponse);
+  // GetEffectiveRuleset returns the category and each ancestor up to the
+  // top-level one, nearest first, with every level's owners and ordered rules
+  // (all five cells), read in one snapshot. It evaluates nothing: the access
+  // engine decides from these inputs. NOT_FOUND for an unknown category.
+  rpc GetEffectiveRuleset(GetEffectiveRulesetRequest) returns (GetEffectiveRulesetResponse);
   // SetCategoryRuleset replaces a category's rules. They are validated with
   // the steward-authz rule type first.
   rpc SetCategoryRuleset(SetCategoryRulesetRequest) returns (SetCategoryRulesetResponse);

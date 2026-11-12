@@ -44,6 +44,7 @@ var (
 	}
 	workflowMethods = []string{
 		corev1.CategoryService_GetCategory_FullMethodName,
+		corev1.CategoryService_GetEffectiveRuleset_FullMethodName,
 		corev1.PolicyService_GetPolicy_FullMethodName,
 		corev1.PolicyService_GetPolicyVersion_FullMethodName,
 		corev1.PolicyService_SetVersionStatus_FullMethodName,
@@ -51,6 +52,7 @@ var (
 	obligationsMethods = []string{
 		corev1.CategoryService_GetCategory_FullMethodName,
 		corev1.CategoryService_GetCategoryRuleset_FullMethodName,
+		corev1.CategoryService_GetEffectiveRuleset_FullMethodName,
 		corev1.PolicyService_GetPolicy_FullMethodName,
 		corev1.PolicyService_GetPolicyVersion_FullMethodName,
 		corev1.PolicyService_ListPolicyVersions_FullMethodName,
@@ -60,6 +62,7 @@ var (
 	}
 	collabMethods = []string{
 		corev1.CategoryService_GetCategory_FullMethodName,
+		corev1.CategoryService_GetEffectiveRuleset_FullMethodName,
 		corev1.PolicyService_GetPolicy_FullMethodName,
 		corev1.PolicyAppendixService_GetPolicyAppendix_FullMethodName,
 	}

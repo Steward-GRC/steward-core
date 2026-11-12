@@ -43,6 +43,7 @@ type CategoryStorer interface {
 	SetDocumentTypes(ctx context.Context, id uuid.UUID, types domain.CategoryDocumentTypes) (domain.Category, error)
 	CountDocuments(ctx context.Context, categoryID uuid.UUID) (store.DocumentCounts, error)
 	GetCategoryRuleset(ctx context.Context, categoryID uuid.UUID) ([]domain.CategoryRule, error)
+	GetEffectiveRuleset(ctx context.Context, categoryID uuid.UUID) ([]store.EffectiveLevel, error)
 	SetCategoryRuleset(ctx context.Context, categoryID uuid.UUID, rules []domain.CategoryRule) ([]domain.CategoryRule, error)
 	// dryRun reads without writing.
 	PurgeUserCategoryRules(ctx context.Context, userID uuid.UUID, dryRun bool) ([]store.PurgedCategoryRule, error)
@@ -826,6 +827,37 @@ func (h *CategoryHandler) GetCategoryRuleset(ctx context.Context, req *corev1.Ge
 		out = append(out, categoryRuleToProto(r))
 	}
 	return &corev1.GetCategoryRulesetResponse{Rules: out}, nil
+}
+
+// GetEffectiveRuleset handles CategoryService.GetEffectiveRuleset: the
+// category and each ancestor, nearest first, with their owners and ordered
+// rules from one read. It evaluates nothing.
+func (h *CategoryHandler) GetEffectiveRuleset(ctx context.Context, req *corev1.GetEffectiveRulesetRequest) (*corev1.GetEffectiveRulesetResponse, error) {
+	catID, err := uuid.Parse(req.GetCategoryId())
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid category_id: %v", err)
+	}
+	chain, err := h.store.GetEffectiveRuleset(ctx, catID)
+	if err != nil {
+		if errors.Is(err, store.ErrCategoryNotFound) {
+			return nil, status.Error(codes.NotFound, "category not found")
+		}
+		logger.Ctx(ctx).Error(err, "get effective ruleset failed", log.F("category_id", catID.String()))
+		return nil, status.Error(codes.Internal, "get effective ruleset failed")
+	}
+	levels := make([]*corev1.EffectiveLevel, 0, len(chain))
+	for _, lv := range chain {
+		owners := make([]string, 0, len(lv.Owners))
+		for _, o := range lv.Owners {
+			owners = append(owners, o.String())
+		}
+		rules := make([]*corev1.CategoryRule, 0, len(lv.Rules))
+		for _, r := range lv.Rules {
+			rules = append(rules, categoryRuleToProto(r))
+		}
+		levels = append(levels, &corev1.EffectiveLevel{CategoryId: lv.CategoryID.String(), Name: lv.Name, Owners: owners, Rules: rules})
+	}
+	return &corev1.GetEffectiveRulesetResponse{Levels: levels}, nil
 }
 
 // SetCategoryRuleset handles CategoryService.SetCategoryRuleset: it replaces
