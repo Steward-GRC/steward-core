@@ -1694,3 +1694,46 @@ func TestPolicyStoreCurrentVersionAndTimestampsOnReads(t *testing.T) {
 		t.Fatalf("expected UpdatedAt to not go backwards: before=%v after=%v", got.UpdatedAt, got2.UpdatedAt)
 	}
 }
+
+// Mock (author-loop): "shows a new draft to its author only, then the published
+// policy to everyone". A new policy read back by its number has only its seeded
+// draft: the current version is that draft at version 0, and nothing is
+// published, which is what lets the gateway hide it from every reader but an
+// author. The same holds for a procedure.
+func TestPolicyStoreNewPolicyReadsBackAsVersionZeroDraft(t *testing.T) {
+	pool := newTestDB(t)
+	gs := store.NewCategoryStore(pool)
+	ts := store.NewTemplateStore(pool)
+	ps := store.NewPolicyStore(pool)
+	ctx := context.Background()
+	g, _ := setupCategoryAndTemplate(t, gs, ts)
+
+	for _, dt := range []domain.DocumentType{domain.DocumentTypePolicy, domain.DocumentTypeProcedure} {
+		p, err := domain.NewPolicy("Travel Booking "+string(dt), g.ID, domain.SensitivityStandard, uuid.New())
+		if err != nil {
+			t.Fatalf("NewPolicy(%s): %v", dt, err)
+		}
+		p.DocumentType = dt
+		created, err := ps.CreatePolicy(ctx, p)
+		if err != nil {
+			t.Fatalf("CreatePolicy(%s): %v", dt, err)
+		}
+
+		got, err := ps.GetPolicyByNumber(ctx, created.Number)
+		if err != nil {
+			t.Fatalf("GetPolicyByNumber(%q): %v", created.Number, err)
+		}
+		if got.CurrentVersionStatus != domain.PolicyVersionStatusDraft {
+			t.Fatalf("%s current status: got %q, want draft", dt, got.CurrentVersionStatus)
+		}
+		if got.CurrentVersionNo != 0 {
+			t.Fatalf("%s current version no: got %d, want 0", dt, got.CurrentVersionNo)
+		}
+		if got.CurrentDraftVersionID != created.CurrentDraftVersionID || got.CurrentDraftVersionID == uuid.Nil {
+			t.Fatalf("%s draft id: got %s, want the seeded %s", dt, got.CurrentDraftVersionID, created.CurrentDraftVersionID)
+		}
+		if got.CurrentPublishedVersionID != uuid.Nil {
+			t.Fatalf("%s published id: got %s, want none before a publish", dt, got.CurrentPublishedVersionID)
+		}
+	}
+}
