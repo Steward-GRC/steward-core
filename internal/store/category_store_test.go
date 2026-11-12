@@ -690,13 +690,14 @@ func TestCategoryStore_CategoryRuleset_RoundTrip(t *testing.T) {
 		t.Fatalf("Create category: %v", err)
 	}
 
-	// Initial get: empty ruleset.
+	// Initial get: the default Everyone: Read rule.
 	rules, err := s.GetCategoryRuleset(ctx, cat.ID)
 	if err != nil {
-		t.Fatalf("GetCategoryRuleset (empty): %v", err)
+		t.Fatalf("GetCategoryRuleset (default): %v", err)
 	}
-	if len(rules) != 0 {
-		t.Fatalf("expected empty ruleset, got %d rules", len(rules))
+	if len(rules) != 1 || rules[0].SubjectKind != "everyone" || rules[0].SubjectRef != "" || rules[0].Read != "allow" ||
+		rules[0].Ack != "" || rules[0].Approve != "" || rules[0].Author != "" {
+		t.Fatalf("expected the single default rule everyone/read allow, got %+v", rules)
 	}
 
 	// Set a 2-rule ruleset.
@@ -1134,4 +1135,33 @@ func equalIDs(a, b []uuid.UUID) bool {
 		}
 	}
 	return true
+}
+
+// A child category gets the same default rule as a top-level one.
+func TestCategoryStore_Create_DefaultsEveryoneRead_Child(t *testing.T) {
+	pool := newTestDB(t)
+	s := store.NewCategoryStore(pool)
+	ctx := context.Background()
+
+	parent, err := domain.NewCategory("Parent", "parent-default", uuid.Nil)
+	if err != nil {
+		t.Fatalf("NewCategory: %v", err)
+	}
+	if parent, err = s.Create(ctx, parent); err != nil {
+		t.Fatalf("Create parent: %v", err)
+	}
+	child, err := domain.NewCategory("Child", "child-default", parent.ID)
+	if err != nil {
+		t.Fatalf("NewCategory: %v", err)
+	}
+	if child, err = s.Create(ctx, child); err != nil {
+		t.Fatalf("Create child: %v", err)
+	}
+	rules, err := s.GetCategoryRuleset(ctx, child.ID)
+	if err != nil {
+		t.Fatalf("GetCategoryRuleset: %v", err)
+	}
+	if len(rules) != 1 || rules[0].SubjectKind != "everyone" || rules[0].Read != "allow" {
+		t.Fatalf("child must start with everyone/read allow, got %+v", rules)
+	}
 }

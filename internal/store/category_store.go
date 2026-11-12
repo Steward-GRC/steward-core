@@ -90,12 +90,23 @@ func (s *CategoryStore) Create(ctx context.Context, g domain.Category) (domain.C
 
 	for range codeAssignAttempts {
 		code := NextFreeCode(base, taken)
-		err := s.db.Querier().QueryRow(ctx,
-			`INSERT INTO categories (id, parent_id, name, slug, code, order_index)
-			 VALUES ($1, $2::uuid, $3, $4, $5, `+nextSiblingOrder+`)
-			 RETURNING id, created_at, updated_at, order_index`,
-			g.ID, parentID, g.Name, g.Slug, code,
-		).Scan(&g.ID, &g.CreatedAt, &g.UpdatedAt, &g.OrderIndex)
+		// The category and its default rule go in together, so a new category
+		// never exists without the Everyone: Read rule.
+		err := s.db.RunInTx(ctx, func(tx pgx.Tx) error {
+			if err := tx.QueryRow(ctx,
+				`INSERT INTO categories (id, parent_id, name, slug, code, order_index)
+				 VALUES ($1, $2::uuid, $3, $4, $5, `+nextSiblingOrder+`)
+				 RETURNING id, created_at, updated_at, order_index`,
+				g.ID, parentID, g.Name, g.Slug, code,
+			).Scan(&g.ID, &g.CreatedAt, &g.UpdatedAt, &g.OrderIndex); err != nil {
+				return err
+			}
+			_, err := tx.Exec(ctx, `
+				INSERT INTO category_rules
+				  (category_id, ordinal, subject_kind, subject_ref, grant_read, grant_ack, grant_approve, grant_author)
+				VALUES ($1, 1, 'everyone', '', 'allow', '', '', '')`, g.ID)
+			return err
+		})
 		if err == nil {
 			return g, nil
 		}
