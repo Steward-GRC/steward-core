@@ -43,7 +43,7 @@ func Entries() []apperr.Entry {
 			Title: "delete category", Cause: "the category or one of its subcategories still holds documents",
 			UserSafe: true, Message: "Can't delete category {category}: it or one of its subcategories still has documents. Move or delete those documents first, then delete the category."},
 		{Code: CodeInvalidCategoryRule, Symbol: "INVALID_CATEGORY_RULE", Category: apperr.CategoryInvalid,
-			Title: "category rules", Cause: "a category ruleset failed the steward-authz validation",
+			Title: "category rules", Cause: "a category ruleset failed validation",
 			UserSafe: true, Message: "Access rule {rule} in {category} is not valid ({problem})."},
 		{Code: CodeCategoryTemplateLocked, Symbol: "CATEGORY_TEMPLATE_LOCKED", Category: apperr.CategoryFailedPrecondition,
 			Title: "category template lock", Cause: "a document was created or changed to a template other than the one its category locks",
@@ -123,7 +123,7 @@ func MoveRefused(document, reason, refusal string) error {
 		apperr.Meta("document", document), apperr.Meta("reason", reason), apperr.Meta("refusal", refusal))
 }
 
-// InvalidCategoryRule codes a ruleset steward-authz refused. The category,
+// InvalidCategoryRule codes a ruleset validation refused. The category,
 // rule and problem metadata it attached are kept.
 func InvalidCategoryRule(cause error) error {
 	return apperr.Coded(CodeInvalidCategoryRule, cause)

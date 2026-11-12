@@ -19,7 +19,7 @@ import (
 	"github.com/Steward-GRC/steward-core/internal/grpcsvc"
 )
 
-func TestSetCategoryRulesetRefusesARuleStewardAuthzRejects(t *testing.T) {
+func TestSetCategoryRulesetRefusesAnInvalidRule(t *testing.T) {
 	ctx := context.Background()
 	fs := newFakeCategoryStoreWithRules()
 	cat, err := fs.Create(ctx, domain.Category{Name: "Facilities"})
