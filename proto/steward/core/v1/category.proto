@@ -287,6 +287,8 @@ message CategoryRule {
   GrantEffect ack = 4;
   GrantEffect approve = 5;
   GrantEffect author = 6;
+  // Move and reorder documents in the categories the subject has access to.
+  GrantEffect manage = 7;
 }
 
 message GetCategoryRulesetRequest {

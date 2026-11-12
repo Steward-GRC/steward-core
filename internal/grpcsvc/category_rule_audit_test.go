@@ -98,6 +98,7 @@ func TestSetCategoryRuleset_EmitsCreatedForNewGrants(t *testing.T) {
 		"ack":     "allow",
 		"approve": "deny",
 		"author":  "unset",
+		"manage":  "unset",
 		"ordinal": "1",
 	} {
 		if got := ev.Attributes[attr]; got != want {
@@ -321,5 +322,60 @@ func TestSetCategoryRuleset_NilAuditorStillWrites(t *testing.T) {
 	}
 	if len(resp.Rules) != 1 {
 		t.Fatalf("expected 1 rule back, got %d", len(resp.Rules))
+	}
+}
+
+func TestSetCategoryRuleset_ManageCellIsMappedAndAudited(t *testing.T) {
+	fs := newFakeCategoryStoreWithRules()
+	cap := &capturePublisher{}
+	h := grpcsvc.NewCategoryHandler(fs, grpcsvc.NewImpersonationEmitter(audit.New(cap)))
+
+	actor := uuid.New().String()
+	catID := uuid.New().String()
+	ctx := serverCtxFromMD(t, "x-fwd-user-id", actor)
+
+	manageOnly := func(g corev1.GrantEffect) []*corev1.CategoryRule {
+		return []*corev1.CategoryRule{{
+			SubjectKind: corev1.RuleSubjectKind_RULE_SUBJECT_KIND_GROUP,
+			SubjectRef:  "doc-managers",
+			Manage:      g,
+		}}
+	}
+
+	set, err := h.SetCategoryRuleset(ctx, &corev1.SetCategoryRulesetRequest{
+		CategoryId: catID, Rules: manageOnly(corev1.GrantEffect_GRANT_EFFECT_ALLOW),
+	})
+	if err != nil {
+		t.Fatalf("a rule with only a Manage cell must be valid: %v", err)
+	}
+	if got := set.GetRules()[0].GetManage(); got != corev1.GrantEffect_GRANT_EFFECT_ALLOW {
+		t.Fatalf("Set returned manage %v, want ALLOW", got)
+	}
+	got, err := h.GetCategoryRuleset(ctx, &corev1.GetCategoryRulesetRequest{CategoryId: catID})
+	if err != nil {
+		t.Fatalf("GetCategoryRuleset: %v", err)
+	}
+	if m := got.GetRules()[0].GetManage(); m != corev1.GrantEffect_GRANT_EFFECT_ALLOW {
+		t.Fatalf("Get returned manage %v, want ALLOW", m)
+	}
+
+	events := categoryRuleEvents(cap)
+	if len(events) != 1 || events[0].Attributes["manage"] != "allow" {
+		t.Fatalf("the created event must carry manage=allow: %+v", events)
+	}
+
+	// Changing only the Manage cell is an update, with the previous value.
+	cap.calls = nil
+	if _, err := h.SetCategoryRuleset(ctx, &corev1.SetCategoryRulesetRequest{
+		CategoryId: catID, Rules: manageOnly(corev1.GrantEffect_GRANT_EFFECT_DENY),
+	}); err != nil {
+		t.Fatalf("SetCategoryRuleset (change): %v", err)
+	}
+	events = categoryRuleEvents(cap)
+	if len(events) != 1 || events[0].Action != "category_rule.updated" {
+		t.Fatalf("a manage-only change must emit one update: %+v", events)
+	}
+	if events[0].Attributes["manage"] != "deny" || events[0].Attributes["prev_manage"] != "allow" {
+		t.Fatalf("update attrs: %+v", events[0].Attributes)
 	}
 }

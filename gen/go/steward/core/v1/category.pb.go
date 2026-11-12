@@ -1971,11 +1971,13 @@ type CategoryRule struct {
 	state       protoimpl.MessageState `protogen:"open.v1"`
 	SubjectKind RuleSubjectKind        `protobuf:"varint,1,opt,name=subject_kind,json=subjectKind,proto3,enum=steward.core.v1.RuleSubjectKind" json:"subject_kind,omitempty"`
 	// A directory group name or a user id; empty for everyone.
-	SubjectRef    string      `protobuf:"bytes,2,opt,name=subject_ref,json=subjectRef,proto3" json:"subject_ref,omitempty"`
-	Read          GrantEffect `protobuf:"varint,3,opt,name=read,proto3,enum=steward.core.v1.GrantEffect" json:"read,omitempty"`
-	Ack           GrantEffect `protobuf:"varint,4,opt,name=ack,proto3,enum=steward.core.v1.GrantEffect" json:"ack,omitempty"`
-	Approve       GrantEffect `protobuf:"varint,5,opt,name=approve,proto3,enum=steward.core.v1.GrantEffect" json:"approve,omitempty"`
-	Author        GrantEffect `protobuf:"varint,6,opt,name=author,proto3,enum=steward.core.v1.GrantEffect" json:"author,omitempty"`
+	SubjectRef string      `protobuf:"bytes,2,opt,name=subject_ref,json=subjectRef,proto3" json:"subject_ref,omitempty"`
+	Read       GrantEffect `protobuf:"varint,3,opt,name=read,proto3,enum=steward.core.v1.GrantEffect" json:"read,omitempty"`
+	Ack        GrantEffect `protobuf:"varint,4,opt,name=ack,proto3,enum=steward.core.v1.GrantEffect" json:"ack,omitempty"`
+	Approve    GrantEffect `protobuf:"varint,5,opt,name=approve,proto3,enum=steward.core.v1.GrantEffect" json:"approve,omitempty"`
+	Author     GrantEffect `protobuf:"varint,6,opt,name=author,proto3,enum=steward.core.v1.GrantEffect" json:"author,omitempty"`
+	// Move and reorder documents in the categories the subject has access to.
+	Manage        GrantEffect `protobuf:"varint,7,opt,name=manage,proto3,enum=steward.core.v1.GrantEffect" json:"manage,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2048,6 +2050,13 @@ func (x *CategoryRule) GetApprove() GrantEffect {
 func (x *CategoryRule) GetAuthor() GrantEffect {
 	if x != nil {
 		return x.Author
+	}
+	return GrantEffect_GRANT_EFFECT_UNSPECIFIED
+}
+
+func (x *CategoryRule) GetManage() GrantEffect {
+	if x != nil {
+		return x.Manage
 	}
 	return GrantEffect_GRANT_EFFECT_UNSPECIFIED
 }
@@ -2538,7 +2547,7 @@ const file_steward_core_v1_category_proto_rawDesc = "" +
 	"\faudience_set\x18\x03 \x01(\bR\vaudienceSet\x12#\n" +
 	"\rexclusion_set\x18\x04 \x01(\bR\fexclusionSet\x12!\n" +
 	"\fack_everyone\x18\x05 \x01(\bR\vackEveryone\x12(\n" +
-	"\x10ack_everyone_set\x18\x06 \x01(\bR\x0eackEveryoneSet\"\xc4\x02\n" +
+	"\x10ack_everyone_set\x18\x06 \x01(\bR\x0eackEveryoneSet\"\xfa\x02\n" +
 	"\fCategoryRule\x12C\n" +
 	"\fsubject_kind\x18\x01 \x01(\x0e2 .steward.core.v1.RuleSubjectKindR\vsubjectKind\x12\x1f\n" +
 	"\vsubject_ref\x18\x02 \x01(\tR\n" +
@@ -2546,7 +2555,8 @@ const file_steward_core_v1_category_proto_rawDesc = "" +
 	"\x04read\x18\x03 \x01(\x0e2\x1c.steward.core.v1.GrantEffectR\x04read\x12.\n" +
 	"\x03ack\x18\x04 \x01(\x0e2\x1c.steward.core.v1.GrantEffectR\x03ack\x126\n" +
 	"\aapprove\x18\x05 \x01(\x0e2\x1c.steward.core.v1.GrantEffectR\aapprove\x124\n" +
-	"\x06author\x18\x06 \x01(\x0e2\x1c.steward.core.v1.GrantEffectR\x06author\"<\n" +
+	"\x06author\x18\x06 \x01(\x0e2\x1c.steward.core.v1.GrantEffectR\x06author\x124\n" +
+	"\x06manage\x18\a \x01(\x0e2\x1c.steward.core.v1.GrantEffectR\x06manage\"<\n" +
 	"\x19GetCategoryRulesetRequest\x12\x1f\n" +
 	"\vcategory_id\x18\x01 \x01(\tR\n" +
 	"categoryId\"Q\n" +
@@ -2693,48 +2703,49 @@ var file_steward_core_v1_category_proto_depIdxs = []int32{
 	3,  // 18: steward.core.v1.CategoryRule.ack:type_name -> steward.core.v1.GrantEffect
 	3,  // 19: steward.core.v1.CategoryRule.approve:type_name -> steward.core.v1.GrantEffect
 	3,  // 20: steward.core.v1.CategoryRule.author:type_name -> steward.core.v1.GrantEffect
-	32, // 21: steward.core.v1.GetCategoryRulesetResponse.rules:type_name -> steward.core.v1.CategoryRule
-	32, // 22: steward.core.v1.SetCategoryRulesetRequest.rules:type_name -> steward.core.v1.CategoryRule
-	32, // 23: steward.core.v1.SetCategoryRulesetResponse.rules:type_name -> steward.core.v1.CategoryRule
-	32, // 24: steward.core.v1.RemovedCategoryRule.rule:type_name -> steward.core.v1.CategoryRule
-	37, // 25: steward.core.v1.PurgeUserCategoryRulesResponse.rules:type_name -> steward.core.v1.RemovedCategoryRule
-	6,  // 26: steward.core.v1.CategoryService.CreateCategory:input_type -> steward.core.v1.CreateCategoryRequest
-	8,  // 27: steward.core.v1.CategoryService.GetCategory:input_type -> steward.core.v1.GetCategoryRequest
-	10, // 28: steward.core.v1.CategoryService.ListCategoryChildren:input_type -> steward.core.v1.ListCategoryChildrenRequest
-	12, // 29: steward.core.v1.CategoryService.SetCategoryDefaults:input_type -> steward.core.v1.SetCategoryDefaultsRequest
-	14, // 30: steward.core.v1.CategoryService.SetCategoryTemplateLock:input_type -> steward.core.v1.SetCategoryTemplateLockRequest
-	16, // 31: steward.core.v1.CategoryService.RenameCategory:input_type -> steward.core.v1.RenameCategoryRequest
-	22, // 32: steward.core.v1.CategoryService.DeleteCategory:input_type -> steward.core.v1.DeleteCategoryRequest
-	24, // 33: steward.core.v1.CategoryService.MoveCategory:input_type -> steward.core.v1.MoveCategoryRequest
-	26, // 34: steward.core.v1.CategoryService.ReorderCategories:input_type -> steward.core.v1.ReorderCategoriesRequest
-	18, // 35: steward.core.v1.CategoryService.SetCategoryDocumentTypes:input_type -> steward.core.v1.SetCategoryDocumentTypesRequest
-	20, // 36: steward.core.v1.CategoryService.CountCategoryDocuments:input_type -> steward.core.v1.CountCategoryDocumentsRequest
-	28, // 37: steward.core.v1.CategoryService.SetGovernance:input_type -> steward.core.v1.SetGovernanceRequest
-	30, // 38: steward.core.v1.CategoryService.GetEffectiveGovernance:input_type -> steward.core.v1.GetEffectiveGovernanceRequest
-	33, // 39: steward.core.v1.CategoryService.GetCategoryRuleset:input_type -> steward.core.v1.GetCategoryRulesetRequest
-	35, // 40: steward.core.v1.CategoryService.SetCategoryRuleset:input_type -> steward.core.v1.SetCategoryRulesetRequest
-	38, // 41: steward.core.v1.CategoryService.PurgeUserCategoryRules:input_type -> steward.core.v1.PurgeUserCategoryRulesRequest
-	7,  // 42: steward.core.v1.CategoryService.CreateCategory:output_type -> steward.core.v1.CreateCategoryResponse
-	9,  // 43: steward.core.v1.CategoryService.GetCategory:output_type -> steward.core.v1.GetCategoryResponse
-	11, // 44: steward.core.v1.CategoryService.ListCategoryChildren:output_type -> steward.core.v1.ListCategoryChildrenResponse
-	13, // 45: steward.core.v1.CategoryService.SetCategoryDefaults:output_type -> steward.core.v1.SetCategoryDefaultsResponse
-	15, // 46: steward.core.v1.CategoryService.SetCategoryTemplateLock:output_type -> steward.core.v1.SetCategoryTemplateLockResponse
-	17, // 47: steward.core.v1.CategoryService.RenameCategory:output_type -> steward.core.v1.RenameCategoryResponse
-	23, // 48: steward.core.v1.CategoryService.DeleteCategory:output_type -> steward.core.v1.DeleteCategoryResponse
-	25, // 49: steward.core.v1.CategoryService.MoveCategory:output_type -> steward.core.v1.MoveCategoryResponse
-	27, // 50: steward.core.v1.CategoryService.ReorderCategories:output_type -> steward.core.v1.ReorderCategoriesResponse
-	19, // 51: steward.core.v1.CategoryService.SetCategoryDocumentTypes:output_type -> steward.core.v1.SetCategoryDocumentTypesResponse
-	21, // 52: steward.core.v1.CategoryService.CountCategoryDocuments:output_type -> steward.core.v1.CountCategoryDocumentsResponse
-	29, // 53: steward.core.v1.CategoryService.SetGovernance:output_type -> steward.core.v1.SetGovernanceResponse
-	31, // 54: steward.core.v1.CategoryService.GetEffectiveGovernance:output_type -> steward.core.v1.GetEffectiveGovernanceResponse
-	34, // 55: steward.core.v1.CategoryService.GetCategoryRuleset:output_type -> steward.core.v1.GetCategoryRulesetResponse
-	36, // 56: steward.core.v1.CategoryService.SetCategoryRuleset:output_type -> steward.core.v1.SetCategoryRulesetResponse
-	39, // 57: steward.core.v1.CategoryService.PurgeUserCategoryRules:output_type -> steward.core.v1.PurgeUserCategoryRulesResponse
-	42, // [42:58] is the sub-list for method output_type
-	26, // [26:42] is the sub-list for method input_type
-	26, // [26:26] is the sub-list for extension type_name
-	26, // [26:26] is the sub-list for extension extendee
-	0,  // [0:26] is the sub-list for field type_name
+	3,  // 21: steward.core.v1.CategoryRule.manage:type_name -> steward.core.v1.GrantEffect
+	32, // 22: steward.core.v1.GetCategoryRulesetResponse.rules:type_name -> steward.core.v1.CategoryRule
+	32, // 23: steward.core.v1.SetCategoryRulesetRequest.rules:type_name -> steward.core.v1.CategoryRule
+	32, // 24: steward.core.v1.SetCategoryRulesetResponse.rules:type_name -> steward.core.v1.CategoryRule
+	32, // 25: steward.core.v1.RemovedCategoryRule.rule:type_name -> steward.core.v1.CategoryRule
+	37, // 26: steward.core.v1.PurgeUserCategoryRulesResponse.rules:type_name -> steward.core.v1.RemovedCategoryRule
+	6,  // 27: steward.core.v1.CategoryService.CreateCategory:input_type -> steward.core.v1.CreateCategoryRequest
+	8,  // 28: steward.core.v1.CategoryService.GetCategory:input_type -> steward.core.v1.GetCategoryRequest
+	10, // 29: steward.core.v1.CategoryService.ListCategoryChildren:input_type -> steward.core.v1.ListCategoryChildrenRequest
+	12, // 30: steward.core.v1.CategoryService.SetCategoryDefaults:input_type -> steward.core.v1.SetCategoryDefaultsRequest
+	14, // 31: steward.core.v1.CategoryService.SetCategoryTemplateLock:input_type -> steward.core.v1.SetCategoryTemplateLockRequest
+	16, // 32: steward.core.v1.CategoryService.RenameCategory:input_type -> steward.core.v1.RenameCategoryRequest
+	22, // 33: steward.core.v1.CategoryService.DeleteCategory:input_type -> steward.core.v1.DeleteCategoryRequest
+	24, // 34: steward.core.v1.CategoryService.MoveCategory:input_type -> steward.core.v1.MoveCategoryRequest
+	26, // 35: steward.core.v1.CategoryService.ReorderCategories:input_type -> steward.core.v1.ReorderCategoriesRequest
+	18, // 36: steward.core.v1.CategoryService.SetCategoryDocumentTypes:input_type -> steward.core.v1.SetCategoryDocumentTypesRequest
+	20, // 37: steward.core.v1.CategoryService.CountCategoryDocuments:input_type -> steward.core.v1.CountCategoryDocumentsRequest
+	28, // 38: steward.core.v1.CategoryService.SetGovernance:input_type -> steward.core.v1.SetGovernanceRequest
+	30, // 39: steward.core.v1.CategoryService.GetEffectiveGovernance:input_type -> steward.core.v1.GetEffectiveGovernanceRequest
+	33, // 40: steward.core.v1.CategoryService.GetCategoryRuleset:input_type -> steward.core.v1.GetCategoryRulesetRequest
+	35, // 41: steward.core.v1.CategoryService.SetCategoryRuleset:input_type -> steward.core.v1.SetCategoryRulesetRequest
+	38, // 42: steward.core.v1.CategoryService.PurgeUserCategoryRules:input_type -> steward.core.v1.PurgeUserCategoryRulesRequest
+	7,  // 43: steward.core.v1.CategoryService.CreateCategory:output_type -> steward.core.v1.CreateCategoryResponse
+	9,  // 44: steward.core.v1.CategoryService.GetCategory:output_type -> steward.core.v1.GetCategoryResponse
+	11, // 45: steward.core.v1.CategoryService.ListCategoryChildren:output_type -> steward.core.v1.ListCategoryChildrenResponse
+	13, // 46: steward.core.v1.CategoryService.SetCategoryDefaults:output_type -> steward.core.v1.SetCategoryDefaultsResponse
+	15, // 47: steward.core.v1.CategoryService.SetCategoryTemplateLock:output_type -> steward.core.v1.SetCategoryTemplateLockResponse
+	17, // 48: steward.core.v1.CategoryService.RenameCategory:output_type -> steward.core.v1.RenameCategoryResponse
+	23, // 49: steward.core.v1.CategoryService.DeleteCategory:output_type -> steward.core.v1.DeleteCategoryResponse
+	25, // 50: steward.core.v1.CategoryService.MoveCategory:output_type -> steward.core.v1.MoveCategoryResponse
+	27, // 51: steward.core.v1.CategoryService.ReorderCategories:output_type -> steward.core.v1.ReorderCategoriesResponse
+	19, // 52: steward.core.v1.CategoryService.SetCategoryDocumentTypes:output_type -> steward.core.v1.SetCategoryDocumentTypesResponse
+	21, // 53: steward.core.v1.CategoryService.CountCategoryDocuments:output_type -> steward.core.v1.CountCategoryDocumentsResponse
+	29, // 54: steward.core.v1.CategoryService.SetGovernance:output_type -> steward.core.v1.SetGovernanceResponse
+	31, // 55: steward.core.v1.CategoryService.GetEffectiveGovernance:output_type -> steward.core.v1.GetEffectiveGovernanceResponse
+	34, // 56: steward.core.v1.CategoryService.GetCategoryRuleset:output_type -> steward.core.v1.GetCategoryRulesetResponse
+	36, // 57: steward.core.v1.CategoryService.SetCategoryRuleset:output_type -> steward.core.v1.SetCategoryRulesetResponse
+	39, // 58: steward.core.v1.CategoryService.PurgeUserCategoryRules:output_type -> steward.core.v1.PurgeUserCategoryRulesResponse
+	43, // [43:59] is the sub-list for method output_type
+	27, // [27:43] is the sub-list for method input_type
+	27, // [27:27] is the sub-list for extension type_name
+	27, // [27:27] is the sub-list for extension extendee
+	0,  // [0:27] is the sub-list for field type_name
 }
 
 func init() { file_steward_core_v1_category_proto_init() }
