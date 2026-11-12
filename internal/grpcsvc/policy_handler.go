@@ -1459,7 +1459,9 @@ func (h *PolicyHandler) emitReindexAudit(ctx context.Context, actor, subject str
 	})
 }
 
-// DiffVersions handles PolicyService.DiffVersions.
+// DiffVersions handles PolicyService.DiffVersions. Two versions that both pin a template version
+// are diffed section by section against the "to" version's template (issue 108); when either has
+// none (freeform, or freeform against templated) both are diffed block by block from their content.
 func (h *PolicyHandler) DiffVersions(ctx context.Context, req *corev1.DiffVersionsRequest) (*corev1.DiffVersionsResponse, error) {
 	fromID, err := uuid.Parse(req.GetFromVersionId())
 	if err != nil {
@@ -1502,15 +1504,24 @@ func (h *PolicyHandler) DiffVersions(ctx context.Context, req *corev1.DiffVersio
 		return nil, status.Error(codes.Internal, "get to version failed")
 	}
 
-	isTemplateMigration := fromPV.TemplateVersionID != toPV.TemplateVersionID
+	var diffs []domain.SectionDiff
+	if fromPV.TemplateVersionID == uuid.Nil || toPV.TemplateVersionID == uuid.Nil {
+		// A freeform version pins no template version, so there are no template sections to diff
+		// against; this also covers a freeform version against a templated one. Both sides are
+		// diffed block by block from their content (domain.DiffBlocks).
+		logger.Ctx(ctx).Debug("version diff by content blocks",
+			log.F("from_version_id", fromID.String()), log.F("to_version_id", toID.String()))
+		diffs, err = domain.DiffBlocks(fromPV.ContentJSON, toPV.ContentJSON)
+	} else {
+		isTemplateMigration := fromPV.TemplateVersionID != toPV.TemplateVersionID
 
-	// The pinned template version, not the template, so renamed sections still resolve.
-	tv, err := h.tplStore.GetTemplateVersion(ctx, toPV.TemplateVersionID)
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "fetch template version: %v", err)
+		// The pinned template version, not the template, so renamed sections still resolve.
+		tv, tvErr := h.tplStore.GetTemplateVersion(ctx, toPV.TemplateVersionID)
+		if tvErr != nil {
+			return nil, status.Errorf(codes.Internal, "fetch template version: %v", tvErr)
+		}
+		diffs, err = domain.DiffVersions(fromPV.ContentJSON, toPV.ContentJSON, tv.Sections, isTemplateMigration)
 	}
-
-	diffs, err := domain.DiffVersions(fromPV.ContentJSON, toPV.ContentJSON, tv.Sections, isTemplateMigration)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "diff: %v", err)
 	}
