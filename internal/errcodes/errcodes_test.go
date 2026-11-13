@@ -160,3 +160,16 @@ func TestCategoryHoldsDocumentsRoundTrip(t *testing.T) {
 	require.Equal(t, "3", info.Metadata["policies"])
 	require.Equal(t, "2", info.Metadata["procedures"])
 }
+
+func TestInvalidWorkCalendarRoundTrip(t *testing.T) {
+	st := status.Convert(errcodes.Error(context.Background(), errcodes.InvalidWorkCalendar("holiday date 2026-02-30 is not a real YYYY-MM-DD date")))
+	require.Equal(t, codes.InvalidArgument, st.Code())
+	require.Contains(t, st.Message(), "work calendar is not valid")
+	require.Contains(t, st.Message(), "2026-02-30", "the problem is interpolated")
+
+	info, ok := apperrgrpc.FromStatus(st)
+	require.True(t, ok)
+	require.Equal(t, "INVALID_WORK_CALENDAR", info.Symbol)
+	require.Equal(t, 4009, info.Code)
+	require.Equal(t, "core", info.Domain)
+}

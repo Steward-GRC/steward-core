@@ -12,6 +12,7 @@ import (
 	"github.com/Steward-GRC/steward-core/internal/domain"
 	"github.com/Steward-GRC/steward-core/internal/grpcsvc"
 	"github.com/Steward-GRC/steward-core/internal/store"
+	"github.com/Steward-GRC/steward-core/internal/workcal"
 	"github.com/google/uuid"
 )
 
@@ -242,9 +243,14 @@ func (f *fakeSettingsStore) GetGlobalSettings(_ context.Context) (store.GlobalSe
 	return f.gs, nil
 }
 
-func (f *fakeSettingsStore) SetGlobalSettings(_ context.Context, gs store.GlobalSettings) (store.GlobalSettings, error) {
+func (f *fakeSettingsStore) SetGlobalSettings(_ context.Context, gs store.GlobalSettings, cal *workcal.Calendar) (store.GlobalSettings, error) {
+	keep := f.gs.WorkCalendar
 	f.gs = gs
-	return gs, nil
+	f.gs.WorkCalendar = keep
+	if cal != nil {
+		f.gs.WorkCalendar = *cal
+	}
+	return f.gs, nil
 }
 
 func TestGetGlobalSettingsCacheAsideAndInvalidation(t *testing.T) {

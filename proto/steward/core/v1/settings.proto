@@ -21,11 +21,36 @@ message Maintenance {
   string message = 2;
 }
 
-// GlobalSettings is the stored settings singleton. Every field is an adopter
-// setting with an empty default.
+// Holiday is one day off on the work calendar. date is a strict YYYY-MM-DD
+// civil date in the calendar's time zone; label is 0 to 80 characters (empty is allowed).
+message Holiday {
+  string date = 1;
+  string label = 2;
+}
+
+// WorkCalendar is the one site-wide calendar that says which days count as
+// working days. weekdays are ISO numbers (1 Monday to 7 Sunday), at least one,
+// no repeats. timezone is an IANA name ("UTC", "Europe/London"); the empty
+// string and "Local" are refused. holidays are unique dates, at most 366.
+// Whole days only. Unset, the calendar is Monday to Friday, UTC, no holidays.
+message WorkCalendar {
+  repeated int32 weekdays = 1;
+  string timezone = 2;
+  repeated Holiday holidays = 3;
+}
+
+// GlobalSettings is the stored settings singleton. The banners are adopter
+// settings with an empty default.
+//
+// work_calendar has message presence. On Get it is always set: the effective
+// calendar, the defaults when none was ever saved. On Set an absent
+// work_calendar means "leave the stored calendar unchanged" (so a client that
+// predates the field cannot wipe it); a present one replaces it whole and is
+// validated, an invalid one is InvalidArgument and nothing is written.
 message GlobalSettings {
   Announcement announcement = 1;
   Maintenance maintenance = 2;
+  WorkCalendar work_calendar = 3;
 }
 
 message GetGlobalSettingsRequest {}
