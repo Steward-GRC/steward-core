@@ -32,6 +32,7 @@ type policyAppendixBackend interface {
 	Retire(ctx context.Context, id, actor uuid.UUID) (domain.PolicyAppendix, bool, error)
 	Restore(ctx context.Context, id uuid.UUID) (domain.PolicyAppendix, bool, error)
 	ReorderAppendices(ctx context.Context, policyID uuid.UUID, orderedIDs []uuid.UUID) ([]domain.PolicyAppendix, error)
+	Delete(ctx context.Context, id uuid.UUID) (domain.PolicyAppendix, error)
 }
 
 // PolicyAppendixHandler implements corev1.PolicyAppendixServiceServer: the
@@ -120,7 +121,7 @@ func policyAppendixErr(ctx context.Context, op string, err error) error {
 	case errors.Is(err, store.ErrAppendixReorderMismatch), errors.Is(err, store.ErrAppendixPolicyMismatch):
 		l.Warn("policy appendix op refused: bad order list", log.F("op", op), log.F("reason", err.Error()))
 		return status.Error(codes.InvalidArgument, err.Error())
-	case errors.Is(err, store.ErrAppendixNoDraft), errors.Is(err, store.ErrAppendixRetired):
+	case errors.Is(err, store.ErrAppendixNoDraft), errors.Is(err, store.ErrAppendixRetired), errors.Is(err, store.ErrAppendixNotRetired):
 		l.Warn("policy appendix op refused: wrong state", log.F("op", op), log.F("reason", err.Error()))
 		return status.Error(codes.FailedPrecondition, err.Error())
 	default:
@@ -349,6 +350,36 @@ func (h *PolicyAppendixHandler) RestoreAppendix(ctx context.Context, req *corev1
 		l.Debug("restore appendix: already live", log.F("appendix_id", id.String()))
 	}
 	return &corev1.RestoreAppendixResponse{Appendix: policyAppendixToProto(a)}, nil
+}
+
+// DeletePolicyAppendix handles PolicyAppendixService.DeletePolicyAppendix:
+// removes a retired appendix, its versions and its history for good. An
+// appendix that is not retired is FailedPrecondition and an unknown one is
+// NotFound; neither changes anything or writes an event. Who may delete is the
+// caller's rule (only a site admin may; the gateway enforces it), as with
+// DeleteAsset. The audit event carries ids and the last version numbers, never
+// a title or text.
+func (h *PolicyAppendixHandler) DeletePolicyAppendix(ctx context.Context, req *corev1.DeletePolicyAppendixRequest) (*corev1.DeletePolicyAppendixResponse, error) {
+	l := logger.Ctx(ctx)
+	id, err := uuid.Parse(req.GetId())
+	if err != nil {
+		l.Debug("delete appendix refused: bad id")
+		return nil, status.Errorf(codes.InvalidArgument, "invalid id: %v", err)
+	}
+	actor, err := parseAppendixActor(req.GetActorUserId())
+	if err != nil {
+		l.Debug("delete appendix refused: bad actor", log.F("appendix_id", id.String()))
+		return nil, err
+	}
+	l.Debug("delete appendix for good", log.F("appendix_id", id.String()), log.F("actor", actor.String()))
+	gone, err := h.store.Delete(ctx, id)
+	if err != nil {
+		return nil, policyAppendixErr(ctx, "delete_policy_appendix", err)
+	}
+	l.Info("appendix deleted for good", log.F("appendix_id", id.String()), log.F("policy_id", gone.PolicyID.String()),
+		log.F("versions_removed", len(gone.Versions)))
+	h.audited(ctx, "appendix.deleted", req.GetActorUserId(), gone)
+	return &corev1.DeletePolicyAppendixResponse{}, nil
 }
 
 // ReorderPolicyAppendices handles PolicyAppendixService.ReorderPolicyAppendices.

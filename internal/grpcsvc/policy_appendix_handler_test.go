@@ -83,6 +83,12 @@ func (f *fakePolicyAppendixBackend) Restore(_ context.Context, id uuid.UUID) (do
 	return f.result, f.changed, f.err
 }
 
+func (f *fakePolicyAppendixBackend) Delete(_ context.Context, id uuid.UUID) (domain.PolicyAppendix, error) {
+	f.calls++
+	f.gotID = id
+	return f.result, f.err
+}
+
 func (f *fakePolicyAppendixBackend) ReorderAppendices(_ context.Context, policy uuid.UUID, ids []uuid.UUID) ([]domain.PolicyAppendix, error) {
 	f.calls++
 	f.gotPolicy, f.gotOrder = policy, ids
@@ -468,5 +474,69 @@ func TestPolicyAppendixHandler_ReorderAuditFailureDoesNotUndoIt(t *testing.T) {
 	_, err := f.h.ReorderPolicyAppendices(context.Background(), &corev1.ReorderPolicyAppendicesRequest{
 		PolicyId: f.policy.String(), ActorUserId: f.bob.String(),
 	})
+	require.NoError(t, err)
+}
+
+// core#85: deleting for good removes the appendix and writes one audit event
+// that names the actor, the policy and the appendix, and no title or text.
+func TestPolicyAppendixHandler_DeleteAuditsTheRemoval(t *testing.T) {
+	f := newAppendixFixture()
+	_, err := f.h.DeletePolicyAppendix(context.Background(), &corev1.DeletePolicyAppendixRequest{Id: f.id.String(), ActorUserId: f.alice.String()})
+	require.NoError(t, err)
+	require.Equal(t, f.id, f.b.gotID)
+	require.Len(t, f.events(), 1)
+	ev := f.events()[0]
+	require.Equal(t, "appendix.deleted", ev.Action)
+	require.Equal(t, audit.TierAudit, ev.Tier)
+	require.Equal(t, f.alice.String(), ev.ActorUserID)
+	require.Equal(t, "policy_appendix:"+f.id.String(), ev.Subject)
+	require.Equal(t, f.policy.String(), ev.Attributes["policy_id"])
+	require.Equal(t, f.id.String(), ev.Attributes["appendix_id"])
+	for k, v := range ev.Attributes {
+		require.NotContains(t, v, "Glossary", "attribute %s must not carry a title", k)
+	}
+}
+
+func TestPolicyAppendixHandler_DeleteRefusesAnAppendixThatIsNotRetired(t *testing.T) {
+	f := newAppendixFixture()
+	f.b.err = store.ErrAppendixNotRetired
+	_, err := f.h.DeletePolicyAppendix(context.Background(), &corev1.DeletePolicyAppendixRequest{Id: f.id.String(), ActorUserId: f.alice.String()})
+	requireCode(t, err, codes.FailedPrecondition)
+	require.Empty(t, f.events(), "a refused delete writes no event")
+}
+
+func TestPolicyAppendixHandler_DeleteUnknownAppendixIsNotFound(t *testing.T) {
+	f := newAppendixFixture()
+	f.b.err = store.ErrPolicyAppendixNotFound
+	_, err := f.h.DeletePolicyAppendix(context.Background(), &corev1.DeletePolicyAppendixRequest{Id: f.id.String(), ActorUserId: f.alice.String()})
+	requireCode(t, err, codes.NotFound)
+	require.Empty(t, f.events())
+}
+
+func TestPolicyAppendixHandler_DeleteRefusesBadIDsBeforeTheStore(t *testing.T) {
+	f := newAppendixFixture()
+	ctx := context.Background()
+	_, err := f.h.DeletePolicyAppendix(ctx, &corev1.DeletePolicyAppendixRequest{Id: "nope", ActorUserId: f.alice.String()})
+	requireCode(t, err, codes.InvalidArgument)
+	_, err = f.h.DeletePolicyAppendix(ctx, &corev1.DeletePolicyAppendixRequest{Id: f.id.String(), ActorUserId: ""})
+	requireCode(t, err, codes.InvalidArgument)
+	require.Zero(t, f.b.calls, "the store is never reached")
+	require.Empty(t, f.events())
+}
+
+func TestPolicyAppendixHandler_DeleteStoreFaultIsCodedAndWritesNoEvent(t *testing.T) {
+	f := newAppendixFixture()
+	f.b.err = errors.New("dial tcp core-pg:5432: connect: connection refused")
+	_, err := f.h.DeletePolicyAppendix(context.Background(), &corev1.DeletePolicyAppendixRequest{Id: f.id.String(), ActorUserId: f.alice.String()})
+	require.Error(t, err)
+	require.NotContains(t, err.Error(), "5432")
+	require.Empty(t, f.events())
+}
+
+// A failed audit emit does not undo a delete that already happened.
+func TestPolicyAppendixHandler_DeleteSurvivesAFailedAuditEmit(t *testing.T) {
+	f := newAppendixFixture()
+	f.audit.err = errors.New("audit down")
+	_, err := f.h.DeletePolicyAppendix(context.Background(), &corev1.DeletePolicyAppendixRequest{Id: f.id.String(), ActorUserId: f.alice.String()})
 	require.NoError(t, err)
 }

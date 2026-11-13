@@ -28,6 +28,8 @@ var (
 	ErrAppendixNoDraft = errors.New("appendix has no draft to publish")
 	// ErrAppendixRetired is returned when saving or publishing a retired appendix.
 	ErrAppendixRetired = errors.New("appendix is retired; restore it first")
+	// ErrAppendixNotRetired is returned when deleting an appendix that is still live.
+	ErrAppendixNotRetired = errors.New("appendix is not retired; retire it before deleting it for good")
 	// ErrAppendixPolicyMismatch is returned when a checkpoint names a policy the appendix does not belong to.
 	ErrAppendixPolicyMismatch = errors.New("appendix does not belong to the policy")
 	// ErrAppendixReorderMismatch is returned when a reorder list is not every live appendix of the policy exactly once.
@@ -385,6 +387,54 @@ func (s *PolicyAppendixStore) Restore(ctx context.Context, id uuid.UUID) (domain
 		return domain.PolicyAppendix{}, false, err
 	}
 	return a, changed, nil
+}
+
+// Delete removes a retired appendix for good: the row and, by cascade, every
+// row of its version table (the draft included). A live appendix is
+// ErrAppendixNotRetired and nothing changes; an unknown id is
+// ErrPolicyAppendixNotFound. It runs under the policy lock like every other
+// write. Live appendices keep their places (a retired one holds none), so there
+// is nothing to renumber. The appendix as it was is returned, so the caller can
+// audit what went.
+func (s *PolicyAppendixStore) Delete(ctx context.Context, id uuid.UUID) (domain.PolicyAppendix, error) {
+	var gone domain.PolicyAppendix
+	err := s.db.RunInTx(ctx, func(tx pgx.Tx) error {
+		var policyID uuid.UUID
+		if err := tx.QueryRow(ctx, `SELECT policy_id FROM policy_owned_appendices WHERE id=$1`, id).Scan(&policyID); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return ErrPolicyAppendixNotFound
+			}
+			return err
+		}
+		if err := lockPolicy(ctx, tx, policyID); err != nil {
+			return err
+		}
+		all, err := loadPolicyAppendices(ctx, tx, policyID)
+		if err != nil {
+			return err
+		}
+		at := slices.IndexFunc(all, func(a domain.PolicyAppendix) bool { return a.ID == id })
+		if at < 0 {
+			return ErrPolicyAppendixNotFound // deleted between the two reads
+		}
+		if all[at].Live() {
+			return ErrAppendixNotRetired
+		}
+		gone = all[at]
+		// The versions go with it: policy_appendix_versions cascades on appendix_id.
+		tag, err := tx.Exec(ctx, `DELETE FROM policy_owned_appendices WHERE id=$1 AND retired_at IS NOT NULL`, id)
+		if err != nil {
+			return err
+		}
+		if tag.RowsAffected() != 1 {
+			return ErrAppendixNotRetired // restored between the read and the delete
+		}
+		return nil
+	})
+	if err != nil {
+		return domain.PolicyAppendix{}, fmt.Errorf("PolicyAppendixStore.Delete: %w", err)
+	}
+	return gone, nil
 }
 
 // ReorderAppendices sets the order of a policy's live appendices from their
