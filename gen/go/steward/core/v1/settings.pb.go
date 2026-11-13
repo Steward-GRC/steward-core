@@ -140,7 +140,7 @@ func (x *Maintenance) GetMessage() string {
 }
 
 // Holiday is one day off on the work calendar. date is a strict YYYY-MM-DD
-// civil date in the calendar's time zone; label is 1 to 80 characters.
+// civil date in the calendar's time zone; label is 0 to 80 characters (empty is allowed).
 type Holiday struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Date          string                 `protobuf:"bytes,1,opt,name=date,proto3" json:"date,omitempty"`

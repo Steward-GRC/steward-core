@@ -62,7 +62,7 @@ func Entries() []apperr.Entry {
 			Title: "category document types", Cause: "narrowing the accepted document types would strand documents already in the category",
 			UserSafe: true, Message: "Can't change what {category} accepts: it holds {count} documents the new setting would not accept ({policies} policies, {procedures} procedures). Move them to another category first."},
 		{Code: CodeInvalidWorkCalendar, Symbol: "INVALID_WORK_CALENDAR", Category: apperr.CategoryInvalid,
-			Title: "work calendar", Cause: "the site work calendar failed validation: no working weekday, a bad or repeated weekday, an unknown time zone, a bad, repeated or too many holidays, or a holiday label that is empty or over 80 characters",
+			Title: "work calendar", Cause: "the site work calendar failed validation: no working weekday, a bad or repeated weekday, an unknown time zone, a bad, repeated or too many holidays, or a holiday label over 80 characters",
 			UserSafe: true, Message: "The work calendar is not valid: {problem}."},
 	}
 }

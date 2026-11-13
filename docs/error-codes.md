@@ -15,4 +15,4 @@ caller; every other code is sent as `Code N: Internal Error`.
 | 4006 | `MOVE_REFUSED` | move documents | a bulk move was refused whole because a document cannot move: it is retired or the target category does not hold its type; the reason metadata names which | yes |
 | 4007 | `CATEGORY_REFUSES_TYPE` | category document types | a document was created in, or moved into, a category that does not accept its type | yes |
 | 4008 | `CATEGORY_HOLDS_DOCUMENTS` | category document types | narrowing the accepted document types would strand documents already in the category | yes |
-| 4009 | `INVALID_WORK_CALENDAR` | work calendar | the site work calendar failed validation: no working weekday, a bad or repeated weekday, an unknown time zone, a bad, repeated or too many holidays, or a holiday label that is empty or over 80 characters | yes |
+| 4009 | `INVALID_WORK_CALENDAR` | work calendar | the site work calendar failed validation: no working weekday, a bad or repeated weekday, an unknown time zone, a bad, repeated or too many holidays, or a holiday label over 80 characters | yes |

@@ -153,7 +153,7 @@ func TestSetGlobalSettingsRejectsAnInvalidCalendarWithoutWriting(t *testing.T) {
 		"unknown zone":   protoCal([]int32{1}, "Nowhere/Land"),
 		"bad date":       protoCal([]int32{1}, "UTC", &corev1.Holiday{Date: "2026-02-30", Label: "x"}),
 		"duplicate date": protoCal([]int32{1}, "UTC", &corev1.Holiday{Date: "2026-12-25", Label: "a"}, &corev1.Holiday{Date: "2026-12-25", Label: "b"}),
-		"empty label":    protoCal([]int32{1}, "UTC", &corev1.Holiday{Date: "2026-12-25"}),
+		"label 81 chars": protoCal([]int32{1}, "UTC", &corev1.Holiday{Date: "2026-12-25", Label: strings.Repeat("e", 81)}),
 	}
 	for name, wc := range bad {
 		h, fs, pub, c := h0()
@@ -290,5 +290,29 @@ func TestSetGlobalSettingsStoreFailuresAreCodedNotLeaked(t *testing.T) {
 	st := status.Convert(err)
 	if st.Code() != codes.Internal || strings.Contains(st.Message(), "192.0.2.10") {
 		t.Fatalf("status = %v %q", st.Code(), st.Message())
+	}
+}
+
+func TestSetGlobalSettingsAcceptsAnEmptyLabelAndAuditLeavesLabelsOut(t *testing.T) {
+	fs := newCalSettingsStore()
+	pub := &capturePublisher{}
+	h := grpcsvc.NewSettingsHandler(fs, audit.New(pub))
+	resp, err := h.SetGlobalSettings(context.Background(), &corev1.SetGlobalSettingsRequest{ActorUserId: "admin-1",
+		Settings: &corev1.GlobalSettings{WorkCalendar: protoCal([]int32{1, 2}, "UTC",
+			&corev1.Holiday{Date: "2026-12-25"}, &corev1.Holiday{Date: "2026-12-26", Label: "Secret Label"})}})
+	if err != nil {
+		t.Fatalf("an empty label must be accepted: %v", err)
+	}
+	hs := resp.GetSettings().GetWorkCalendar().GetHolidays()
+	if len(hs) != 2 || hs[0].GetDate() != "2026-12-25" || hs[0].GetLabel() != "" {
+		t.Fatalf("empty label must round trip, got %v", hs)
+	}
+	if len(pub.calls) != 2 {
+		t.Fatalf("events = %v", calActions(pub))
+	}
+	for _, v := range pub.calls[1].event.Attributes {
+		if strings.Contains(v, "Secret Label") {
+			t.Fatalf("labels stay out of the event: %v", pub.calls[1].event.Attributes)
+		}
 	}
 }

@@ -49,8 +49,8 @@ var (
 	ErrDuplicateHoliday = errors.New("a holiday date can be listed once")
 	// ErrTooManyHolidays means the list is longer than MaxHolidays.
 	ErrTooManyHolidays = errors.New("too many holidays")
-	// ErrInvalidLabel means a holiday label is empty, blank or too long.
-	ErrInvalidLabel = errors.New("a holiday label must be 1 to 80 characters")
+	// ErrInvalidLabel means a holiday label is longer than MaxLabelRunes.
+	ErrInvalidLabel = errors.New("a holiday label can be at most 80 characters")
 )
 
 // Holiday is one day off. Date is a strict YYYY-MM-DD civil date.
@@ -107,8 +107,8 @@ func (c Calendar) Validate() error {
 			return fmt.Errorf("%w: %s is repeated", ErrDuplicateHoliday, h.Date)
 		}
 		dates[h.Date] = struct{}{}
-		if n := utf8.RuneCountInString(h.Label); strings.TrimSpace(h.Label) == "" || n > MaxLabelRunes {
-			return fmt.Errorf("%w: the label for %s has %d", ErrInvalidLabel, h.Date, n)
+		if n := utf8.RuneCountInString(h.Label); n > MaxLabelRunes {
+			return fmt.Errorf("%w: the label for %s has %d characters", ErrInvalidLabel, h.Date, n)
 		}
 	}
 	return nil

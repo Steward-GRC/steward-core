@@ -110,3 +110,22 @@ func TestSettingsStore_WorkCalendar_clearingHolidaysStoresAnEmptyList(t *testing
 		t.Fatalf("holidays stored as %s, want []", raw)
 	}
 }
+
+func TestSettingsStore_WorkCalendar_emptyLabelRoundTrips(t *testing.T) {
+	pool := newTestDB(t)
+	s := store.NewSettingsStore(pool)
+	ctx := context.Background()
+
+	cal := workcal.Calendar{Weekdays: []int{1}, Timezone: "UTC",
+		Holidays: []workcal.Holiday{{Date: "2026-12-25"}}}.Normalize()
+	if _, err := s.SetGlobalSettings(ctx, store.GlobalSettings{AnnouncementLevel: "info"}, &cal); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.GetGlobalSettings(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got.WorkCalendar, cal) {
+		t.Fatalf("calendar = %+v, want %+v", got.WorkCalendar, cal)
+	}
+}

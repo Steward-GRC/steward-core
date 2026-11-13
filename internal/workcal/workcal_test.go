@@ -32,6 +32,9 @@ func TestValidateAccepts(t *testing.T) {
 		"half hour zone":       {Weekdays: []int{1}, Timezone: "Asia/Kolkata"},
 		"holiday on a weekend": {Weekdays: []int{1}, Timezone: "UTC", Holidays: []workcal.Holiday{{Date: "2026-11-14", Label: "Saturday"}}},
 		"leap day":             {Weekdays: []int{1}, Timezone: "UTC", Holidays: []workcal.Holiday{{Date: "2028-02-29", Label: "Leap"}}},
+		"empty label":          {Weekdays: []int{1}, Timezone: "UTC", Holidays: []workcal.Holiday{{Date: "2026-12-25"}}},
+		"blank label":          {Weekdays: []int{1}, Timezone: "UTC", Holidays: []workcal.Holiday{{Date: "2026-12-25", Label: "   "}}},
+		"80 multibyte chars":   {Weekdays: []int{1}, Timezone: "UTC", Holidays: []workcal.Holiday{{Date: "2026-12-25", Label: strings.Repeat("\u00e9", 80)}}},
 		"label of 80 runes":    {Weekdays: []int{1}, Timezone: "UTC", Holidays: []workcal.Holiday{{Date: "2026-12-25", Label: strings.Repeat("e", 80)}}},
 	}
 	for name, c := range cases {
@@ -78,8 +81,7 @@ func TestValidateRejectsEachRule(t *testing.T) {
 		{"holiday non digit", workcal.Calendar{Weekdays: []int{1}, Timezone: "UTC", Holidays: hol("2026-1a-05")}, workcal.ErrInvalidHoliday},
 		{"holiday duplicated", workcal.Calendar{Weekdays: []int{1}, Timezone: "UTC", Holidays: []workcal.Holiday{{Date: "2026-12-25", Label: "a"}, {Date: "2026-12-25", Label: "b"}}}, workcal.ErrDuplicateHoliday},
 		{"too many holidays", workcal.Calendar{Weekdays: []int{1}, Timezone: "UTC", Holidays: tooMany}, workcal.ErrTooManyHolidays},
-		{"label empty", workcal.Calendar{Weekdays: []int{1}, Timezone: "UTC", Holidays: []workcal.Holiday{{Date: "2026-12-25"}}}, workcal.ErrInvalidLabel},
-		{"label blank", workcal.Calendar{Weekdays: []int{1}, Timezone: "UTC", Holidays: []workcal.Holiday{{Date: "2026-12-25", Label: "   "}}}, workcal.ErrInvalidLabel},
+		{"label 81 multibyte chars", workcal.Calendar{Weekdays: []int{1}, Timezone: "UTC", Holidays: []workcal.Holiday{{Date: "2026-12-25", Label: strings.Repeat("\u00e9", 81)}}}, workcal.ErrInvalidLabel},
 		{"label 81 runes", workcal.Calendar{Weekdays: []int{1}, Timezone: "UTC", Holidays: []workcal.Holiday{{Date: "2026-12-25", Label: strings.Repeat("e", 81)}}}, workcal.ErrInvalidLabel},
 	}
 	for _, tc := range cases {

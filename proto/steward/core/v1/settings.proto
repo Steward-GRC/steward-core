@@ -22,7 +22,7 @@ message Maintenance {
 }
 
 // Holiday is one day off on the work calendar. date is a strict YYYY-MM-DD
-// civil date in the calendar's time zone; label is 1 to 80 characters.
+// civil date in the calendar's time zone; label is 0 to 80 characters (empty is allowed).
 message Holiday {
   string date = 1;
   string label = 2;
