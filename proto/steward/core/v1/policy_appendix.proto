@@ -151,6 +151,20 @@ message RestoreAppendixResponse {
   PolicyAppendix appendix = 1;
 }
 
+// DeletePolicyAppendixRequest removes a retired appendix for good. Core refuses
+// an appendix that is not retired (FAILED_PRECONDITION) and one that does not
+// exist (NOT_FOUND). Who may delete is the caller's rule: only a site admin may,
+// and the gateway enforces that before calling.
+message DeletePolicyAppendixRequest {
+  string id = 1;
+  // The person deleting, named in the audit event.
+  string actor_user_id = 2;
+}
+
+// DeletePolicyAppendixResponse is empty: the appendix, every row of its version
+// table and its history are gone.
+message DeletePolicyAppendixResponse {}
+
 // ReorderPolicyAppendicesRequest sets the order of a policy's live appendices.
 // ordered_ids must hold every live (not retired) appendix of the policy
 // exactly once. Retired appendices keep no place and are not named.
@@ -213,4 +227,6 @@ service PolicyAppendixService {
   rpc ReorderPolicyAppendices(ReorderPolicyAppendicesRequest) returns (ReorderPolicyAppendicesResponse);
   rpc CheckpointAppendixDraft(CheckpointAppendixDraftRequest) returns (CheckpointAppendixDraftResponse);
   rpc DiffPolicyAppendix(DiffPolicyAppendixRequest) returns (DiffPolicyAppendixResponse);
+  // Removes a retired appendix, its versions and its history for good.
+  rpc DeletePolicyAppendix(DeletePolicyAppendixRequest) returns (DeletePolicyAppendixResponse);
 }

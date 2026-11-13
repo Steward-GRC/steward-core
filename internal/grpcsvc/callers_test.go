@@ -207,3 +207,18 @@ func TestAuditDenialRecordsTheCallerNotAClaimedUser(t *testing.T) {
 	}, rec.evs[0].Attributes)
 	require.Equal(t, "service:unauthenticated", rec.evs[1].ActorUserID)
 }
+
+// core#85: deleting a retired appendix for good is the gateway's call alone,
+// on behalf of the signed-in user (the gateway checks the site-admin rule).
+// Collab, identity, delivery, workflow, obligations and any other caller are refused.
+func TestCallerPolicyDeletePolicyAppendixIsGatewayOnly(t *testing.T) {
+	p := CallerPolicy()
+	m := corev1.PolicyAppendixService_DeletePolicyAppendix_FullMethodName
+	got, ok := p.Lookup(m, CallerGateway)
+	require.True(t, ok, "the gateway must be allowed")
+	require.Equal(t, workloadidentity.OnBehalf, got)
+	for _, caller := range []string{CallerDelivery, CallerWorkflow, CallerObligations, CallerCollab, CallerIdentity, "ai", "reporting"} {
+		_, ok := p.Lookup(m, caller)
+		require.False(t, ok, "%s must be refused", caller)
+	}
+}

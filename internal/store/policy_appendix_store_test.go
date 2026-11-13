@@ -629,3 +629,82 @@ func TestPolicyAppendix_ReorderIsSerialisedWithOtherWrites(t *testing.T) {
 		require.Equal(t, i, a.OrderIndex)
 	}
 }
+
+func (e appendixEnv) versionRows(t *testing.T, id uuid.UUID) int {
+	t.Helper()
+	var n int
+	require.NoError(t, e.pool.Pool().QueryRow(e.ctx,
+		`SELECT count(*) FROM policy_appendix_versions WHERE appendix_id=$1`, id).Scan(&n))
+	return n
+}
+
+// core#85, appendices.test.ts "lets a site admin delete a retired appendix for
+// good, history and all": the appendix, every version row and the draft go, the
+// other appendices keep their places, and the id answers not found afterwards.
+func TestPolicyAppendix_DeleteRemovesARetiredAppendixAndItsHistory(t *testing.T) {
+	e := newAppendixEnv(t)
+	ids := threeAppendices(t, e)
+	_, _, err := e.st.SaveDraft(e.ctx, ids[2], e.bob, "Supplier terms v2", content("More."))
+	require.NoError(t, err)
+	require.Equal(t, 2, e.versionRows(t, ids[2]), "published v1 and a draft v2")
+	_, _, err = e.st.Retire(e.ctx, ids[2], e.bob)
+	require.NoError(t, err)
+
+	gone, err := e.st.Delete(e.ctx, ids[2])
+	require.NoError(t, err)
+	require.Equal(t, ids[2], gone.ID, "the removed appendix comes back for the audit event")
+	require.Equal(t, e.policy, gone.PolicyID)
+	require.Len(t, gone.Versions, 2)
+
+	require.Equal(t, 0, e.versionRows(t, ids[2]), "versions and the draft are removed with it")
+	all := e.list(t, true)
+	require.Len(t, all, 2)
+	require.Equal(t, ids[0], all[0].ID)
+	require.Equal(t, "A", all[0].Letter)
+	require.Equal(t, ids[1], all[1].ID)
+	require.Equal(t, "B", all[1].Letter)
+	require.Equal(t, 1, e.versionRows(t, ids[0]), "other appendices keep their history")
+
+	_, err = e.st.Get(e.ctx, ids[2])
+	require.ErrorIs(t, err, store.ErrPolicyAppendixNotFound)
+	_, err = e.st.Delete(e.ctx, ids[2])
+	require.ErrorIs(t, err, store.ErrPolicyAppendixNotFound, "a second delete finds nothing")
+}
+
+// A live appendix is retired first; delete refuses it and changes nothing.
+func TestPolicyAppendix_DeleteRefusesALiveAppendix(t *testing.T) {
+	e := newAppendixEnv(t)
+	ids := threeAppendices(t, e)
+	_, err := e.st.Delete(e.ctx, ids[0])
+	require.ErrorIs(t, err, store.ErrAppendixNotRetired)
+	require.Len(t, e.list(t, true), 3)
+	require.Equal(t, 1, e.versionRows(t, ids[0]))
+
+	// Restoring a retired appendix makes it live again, so delete refuses again.
+	_, _, err = e.st.Retire(e.ctx, ids[0], e.bob)
+	require.NoError(t, err)
+	_, _, err = e.st.Restore(e.ctx, ids[0])
+	require.NoError(t, err)
+	_, err = e.st.Delete(e.ctx, ids[0])
+	require.ErrorIs(t, err, store.ErrAppendixNotRetired)
+}
+
+func TestPolicyAppendix_DeleteUnknownIsNotFound(t *testing.T) {
+	e := newAppendixEnv(t)
+	_, err := e.st.Delete(e.ctx, uuid.New())
+	require.ErrorIs(t, err, store.ErrPolicyAppendixNotFound)
+}
+
+// The deleted appendix's title can be used again, and a new appendix lands last
+// among the live ones with the next letter.
+func TestPolicyAppendix_CreateAfterDeleteStartsClean(t *testing.T) {
+	e := newAppendixEnv(t)
+	ids := threeAppendices(t, e)
+	_, _, err := e.st.Retire(e.ctx, ids[1], e.bob)
+	require.NoError(t, err)
+	_, err = e.st.Delete(e.ctx, ids[1])
+	require.NoError(t, err)
+	made := e.create(t, "")
+	require.Equal(t, "C", made.Letter)
+	require.Equal(t, 2, made.OrderIndex)
+}
