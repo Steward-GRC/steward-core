@@ -378,7 +378,7 @@ service CategoryService {
   // engine decides from these inputs. NOT_FOUND for an unknown category.
   rpc GetEffectiveRuleset(GetEffectiveRulesetRequest) returns (GetEffectiveRulesetResponse);
   // SetCategoryRuleset replaces a category's rules. They are validated with
-  // the steward-authz rule type first.
+  // the go-authz ordered rule model first.
   rpc SetCategoryRuleset(SetCategoryRulesetRequest) returns (SetCategoryRulesetResponse);
   // PurgeUserCategoryRules removes every user-subject rule naming a user,
   // across all categories, in one audited transaction, so a deleted account
