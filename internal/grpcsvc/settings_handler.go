@@ -5,11 +5,15 @@ package grpcsvc
 
 import (
 	"context"
+	"strconv"
+	"strings"
 
 	log "github.com/Bugs5382/go-log"
 	corev1 "github.com/Steward-GRC/steward-core/gen/go/steward/core/v1"
 	"github.com/Steward-GRC/steward-core/internal/audit"
+	"github.com/Steward-GRC/steward-core/internal/errcodes"
 	"github.com/Steward-GRC/steward-core/internal/store"
+	"github.com/Steward-GRC/steward-core/internal/workcal"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
@@ -29,7 +33,7 @@ type settingsCache interface {
 // SettingsStorer is the store interface the SettingsHandler depends on.
 type SettingsStorer interface {
 	GetGlobalSettings(ctx context.Context) (store.GlobalSettings, error)
-	SetGlobalSettings(ctx context.Context, gs store.GlobalSettings) (store.GlobalSettings, error)
+	SetGlobalSettings(ctx context.Context, gs store.GlobalSettings, cal *workcal.Calendar) (store.GlobalSettings, error)
 }
 
 // EmailServiceStorer is the keyless part of the email-service store. It has
@@ -78,7 +82,30 @@ func settingsToProto(gs store.GlobalSettings) *corev1.GlobalSettings {
 			Enabled: gs.MaintenanceEnabled,
 			Message: gs.MaintenanceMessage,
 		},
+		WorkCalendar: workCalendarToProto(gs.WorkCalendar),
 	}
+}
+
+func workCalendarToProto(c workcal.Calendar) *corev1.WorkCalendar {
+	out := &corev1.WorkCalendar{Weekdays: make([]int32, 0, len(c.Weekdays)), Timezone: c.Timezone}
+	for _, d := range c.Weekdays {
+		out.Weekdays = append(out.Weekdays, int32(d)) //nolint:gosec // ISO weekdays are 1..7
+	}
+	for _, h := range c.Holidays {
+		out.Holidays = append(out.Holidays, &corev1.Holiday{Date: h.Date, Label: h.Label})
+	}
+	return out
+}
+
+func workCalendarFromProto(in *corev1.WorkCalendar) workcal.Calendar {
+	c := workcal.Calendar{Timezone: in.GetTimezone()}
+	for _, d := range in.GetWeekdays() {
+		c.Weekdays = append(c.Weekdays, int(d))
+	}
+	for _, h := range in.GetHolidays() {
+		c.Holidays = append(c.Holidays, workcal.Holiday{Date: h.GetDate(), Label: h.GetLabel()})
+	}
+	return c.Normalize()
 }
 
 func settingsFromProto(in *corev1.GlobalSettings) store.GlobalSettings {
@@ -106,7 +133,9 @@ func (h *SettingsHandler) GetGlobalSettings(ctx context.Context, _ *corev1.GetGl
 		l := logger.Ctx(ctx)
 		if b, ok := h.cache.GetBytes(ctx, globalSettingsCacheKey); ok {
 			var resp corev1.GetGlobalSettingsResponse
-			if proto.Unmarshal(b, &resp) == nil {
+			// An entry with no calendar was cached before the field existed:
+			// read it as a miss so a reader always gets the effective calendar.
+			if proto.Unmarshal(b, &resp) == nil && resp.GetSettings().GetWorkCalendar() != nil {
 				l.Debug("global-settings cache hit", log.F("cache_key", globalSettingsCacheKey))
 				return &resp, nil
 			}
@@ -126,9 +155,32 @@ func (h *SettingsHandler) GetGlobalSettings(ctx context.Context, _ *corev1.GetGl
 	return resp, nil
 }
 
-// SetGlobalSettings handles SettingsService.SetGlobalSettings.
+// SetGlobalSettings handles SettingsService.SetGlobalSettings. The banners
+// replace the stored ones. The work calendar is replaced only when the request
+// carries one; an absent calendar leaves it as stored, so a client that
+// predates the field cannot wipe it.
 func (h *SettingsHandler) SetGlobalSettings(ctx context.Context, req *corev1.SetGlobalSettingsRequest) (*corev1.SetGlobalSettingsResponse, error) {
-	gs, err := h.store.SetGlobalSettings(ctx, settingsFromProto(req.GetSettings()))
+	l := logger.Ctx(ctx)
+	l.Debug("set global settings", log.F("calendar_present", req.GetSettings().GetWorkCalendar() != nil))
+
+	var newCal *workcal.Calendar
+	var before workcal.Calendar
+	if in := req.GetSettings().GetWorkCalendar(); in != nil {
+		c := workCalendarFromProto(in)
+		if err := c.Validate(); err != nil {
+			// Refused before anything is read or written.
+			l.Debug("work calendar refused", log.F("problem", err.Error()))
+			return nil, errcodes.Error(ctx, errcodes.InvalidWorkCalendar(err.Error()))
+		}
+		cur, err := h.store.GetGlobalSettings(ctx)
+		if err != nil {
+			return nil, storeUnavailable(ctx, "get_global_settings", err)
+		}
+		before = cur.WorkCalendar
+		newCal = &c
+	}
+
+	gs, err := h.store.SetGlobalSettings(ctx, settingsFromProto(req.GetSettings()), newCal)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "set global settings: %v", err)
 	}
@@ -136,6 +188,7 @@ func (h *SettingsHandler) SetGlobalSettings(ctx context.Context, req *corev1.Set
 	// backstop.
 	if h.cache != nil {
 		h.cache.Del(ctx, globalSettingsCacheKey)
+		l.Debug("global-settings cache cleared", log.F("cache_key", globalSettingsCacheKey))
 	}
 	if h.auditor != nil {
 		_ = h.auditor.Emit(ctx, audit.Event{
@@ -144,7 +197,50 @@ func (h *SettingsHandler) SetGlobalSettings(ctx context.Context, req *corev1.Set
 			ActorUserID: req.GetActorUserId(),
 		})
 	}
+	if newCal != nil && !before.Equal(*newCal) {
+		l.Info("work calendar changed", log.F("holidays", len(newCal.Holidays)), log.F("weekdays", len(newCal.Weekdays)))
+		h.emitWorkCalendarUpdated(ctx, req.GetActorUserId(), before, *newCal)
+	} else if newCal != nil {
+		l.Debug("work calendar unchanged, no calendar event")
+	}
 	return &corev1.SetGlobalSettingsResponse{Settings: settingsToProto(gs)}, nil
+}
+
+// emitWorkCalendarUpdated records a calendar change: the weekdays and zone
+// before and after, the holiday counts and the holiday dates added, removed or
+// relabeled. Labels are free text and stay out of the event.
+func (h *SettingsHandler) emitWorkCalendarUpdated(ctx context.Context, actor string, before, after workcal.Calendar) {
+	if h.auditor == nil {
+		return
+	}
+	attrs := map[string]string{
+		"weekdays_before": joinWeekdays(before.Weekdays),
+		"weekdays_after":  joinWeekdays(after.Weekdays),
+		"timezone_before": before.Timezone,
+		"timezone_after":  after.Timezone,
+		"holidays_before": strconv.Itoa(len(before.Holidays)),
+		"holidays_after":  strconv.Itoa(len(after.Holidays)),
+	}
+	added, removed, relabeled := workcal.DiffHolidays(before, after)
+	for k, v := range map[string][]string{"holidays_added": added, "holidays_removed": removed, "holidays_relabeled": relabeled} {
+		if len(v) > 0 {
+			attrs[k] = strings.Join(v, ",")
+		}
+	}
+	_ = h.auditor.Emit(ctx, audit.Event{
+		Tier: audit.TierAudit, Action: "global_settings.work_calendar_updated",
+		Subject:     "global_settings",
+		ActorUserID: actor,
+		Attributes:  attrs,
+	})
+}
+
+func joinWeekdays(days []int) string {
+	parts := make([]string, len(days))
+	for i, d := range days {
+		parts[i] = strconv.Itoa(d)
+	}
+	return strings.Join(parts, ",")
 }
 
 func emailServiceStatusToProto(st store.EmailServiceStatus) *corev1.EmailServiceStatus {

@@ -30,6 +30,7 @@ const (
 	CodeMoveRefused              = 4006
 	CodeCategoryRefusesType      = 4007
 	CodeCategoryHoldsDocs        = 4008
+	CodeInvalidWorkCalendar      = 4009
 )
 
 // Entries returns the registry entries.
@@ -60,6 +61,9 @@ func Entries() []apperr.Entry {
 		{Code: CodeCategoryHoldsDocs, Symbol: "CATEGORY_HOLDS_DOCUMENTS", Category: apperr.CategoryFailedPrecondition,
 			Title: "category document types", Cause: "narrowing the accepted document types would strand documents already in the category",
 			UserSafe: true, Message: "Can't change what {category} accepts: it holds {count} documents the new setting would not accept ({policies} policies, {procedures} procedures). Move them to another category first."},
+		{Code: CodeInvalidWorkCalendar, Symbol: "INVALID_WORK_CALENDAR", Category: apperr.CategoryInvalid,
+			Title: "work calendar", Cause: "the site work calendar failed validation: no working weekday, a bad or repeated weekday, an unknown time zone, a bad, repeated or too many holidays, or a holiday label that is empty or over 80 characters",
+			UserSafe: true, Message: "The work calendar is not valid: {problem}."},
 	}
 }
 
@@ -171,6 +175,14 @@ func CategoryHoldsDocuments(name string, policies, procedures int) error {
 		apperr.Meta("category", name), apperr.Meta("count", strconv.Itoa(policies+procedures)),
 		apperr.Meta("policies", strconv.Itoa(policies)), apperr.Meta("procedures", strconv.Itoa(procedures)))
 }
+
+// InvalidWorkCalendar codes a site work calendar that failed validation. problem is the
+// validation sentence, which names the value and holds nothing else.
+func InvalidWorkCalendar(problem string) error {
+	return apperr.WithMeta(apperr.Coded(CodeInvalidWorkCalendar, errInvalidWorkCalendar), apperr.Meta("problem", problem))
+}
+
+var errInvalidWorkCalendar = errors.New("core: the work calendar is not valid")
 
 type logSink struct{ l log.Logger }
 
