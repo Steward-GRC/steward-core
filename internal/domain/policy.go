@@ -88,6 +88,9 @@ type Policy struct {
 	// Zero/empty when the policy has neither (never saved a draft).
 	CurrentVersionNo     int
 	CurrentVersionStatus PolicyVersionStatus
+	// CurrentSemver is the semantic version of the current version when that is published;
+	// zero for a draft, which is not numbered until it is published.
+	CurrentSemver SemVer
 }
 
 func NewPolicy(title string, homeCategoryID uuid.UUID, sensitivity Sensitivity, ownerUserID uuid.UUID) (Policy, error) {
@@ -121,6 +124,14 @@ type PolicyVersion struct {
 	// ProposedTitle is a staged rename of a published policy, applied when this
 	// draft is published.
 	ProposedTitle *string
+	// Semver is the semantic version: stored once published. For a draft or a version in review it
+	// is the number a publish would give (Projected is then true); it is zero when core cannot
+	// say, as for a version that was just saved.
+	Semver    SemVer
+	Projected bool
+	// Change is the version's change-type record, see ChangeState. For a draft that was never
+	// submitted, the projection fills Change.Suggested and Change.Type from its content.
+	Change ChangeState
 }
 
 // NewPolicyVersionDraft creates an unsaved draft. VersionNo is assigned by the store on insert.

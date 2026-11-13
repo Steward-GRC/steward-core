@@ -6,6 +6,7 @@ syntax = "proto3";
 package steward.core.v1;
 
 import "google/protobuf/timestamp.proto";
+import "steward/core/v1/semver.proto";
 
 option go_package = "github.com/Steward-GRC/steward-core/gen/go/steward/core/v1;corev1";
 
@@ -48,6 +49,9 @@ message Template {
   // RFC 3339; empty while active. A retired template is hidden, but its
   // published versions stay so the documents pinned to them keep working.
   string retired_at = 5;
+  // The latest of a rename and any version of the template being created or
+  // published.
+  google.protobuf.Timestamp updated_at = 6;
 }
 
 message TemplateVersion {
@@ -57,6 +61,16 @@ message TemplateVersion {
   TemplateVersionStatus status = 4;
   repeated Section sections = 5;
   google.protobuf.Timestamp created_at = 6;
+  // Stored at publish, from the change against the version before (the first
+  // is 1.0.0). For a draft it is the number a publish would give it now.
+  SemanticVersion semantic_version = 7;
+  // What the version published as; for a draft, what it would publish as now.
+  // A required section added, dropped or turned required is MAJOR; an optional
+  // section added or dropped, or changed boilerplate text, is MINOR; the rest
+  // (titles, order, heading level) is FIX.
+  ChangeType change_type = 8;
+  // Unset until the version is published.
+  google.protobuf.Timestamp published_at = 9;
 }
 
 message CreateTemplateRequest {

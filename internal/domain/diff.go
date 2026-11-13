@@ -299,8 +299,15 @@ var diffTextEscaper = strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;"
 // Words are compared raw; this runs only when the HTML is built.
 func escapeDiffText(s string) string { return diffTextEscaper.Replace(s) }
 
-// wordDiffHTML returns an HTML string with <del> and <ins> tags around changed words.
-func wordDiffHTML(from, to string) string {
+// wordOp is one step of a word diff: a word kept ("eq"), added ("ins") or dropped ("del").
+type wordOp struct {
+	kind string
+	word string
+}
+
+// wordOps returns the word diff of from against to as an ordered list of steps. The HTML diff and
+// the change classifier both read it, so they always agree on what changed.
+func wordOps(from, to string) []wordOp {
 	fromWords := strings.Fields(from)
 	toWords := strings.Fields(to)
 	// Simple Myers-style LCS word diff using DP table.
@@ -321,31 +328,32 @@ func wordDiffHTML(from, to string) string {
 		}
 	}
 	// Backtrack to produce diff tokens.
-	var sb strings.Builder
 	i, j := m, n
-	type op struct {
-		kind string
-		word string
-	}
-	var ops []op
+	var ops []wordOp
 	for i > 0 || j > 0 {
 		switch {
 		case i > 0 && j > 0 && fromWords[i-1] == toWords[j-1]:
-			ops = append(ops, op{"eq", fromWords[i-1]})
+			ops = append(ops, wordOp{"eq", fromWords[i-1]})
 			i--
 			j--
 		case j > 0 && (i == 0 || dp[i][j-1] >= dp[i-1][j]):
-			ops = append(ops, op{"ins", toWords[j-1]})
+			ops = append(ops, wordOp{"ins", toWords[j-1]})
 			j--
 		default:
-			ops = append(ops, op{"del", fromWords[i-1]})
+			ops = append(ops, wordOp{"del", fromWords[i-1]})
 			i--
 		}
 	}
 	for l, r := 0, len(ops)-1; l < r; l, r = l+1, r-1 {
 		ops[l], ops[r] = ops[r], ops[l]
 	}
-	for _, o := range ops {
+	return ops
+}
+
+// wordDiffHTML returns an HTML string with <del> and <ins> tags around changed words.
+func wordDiffHTML(from, to string) string {
+	var sb strings.Builder
+	for _, o := range wordOps(from, to) {
 		switch o.kind {
 		case "eq":
 			sb.WriteString(escapeDiffText(o.word) + " ")

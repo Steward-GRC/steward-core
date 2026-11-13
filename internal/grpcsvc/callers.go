@@ -48,6 +48,8 @@ var (
 		corev1.PolicyService_GetPolicy_FullMethodName,
 		corev1.PolicyService_GetPolicyVersion_FullMethodName,
 		corev1.PolicyService_SetVersionStatus_FullMethodName,
+		// core#28: who agreed to lower a change type is workflow's to write.
+		corev1.PolicyService_RecordChangeTypeAgreement_FullMethodName,
 		// core#114: the site work calendar, read when a document is submitted.
 		corev1.SettingsService_GetGlobalSettings_FullMethodName,
 	}
@@ -94,6 +96,9 @@ func CallerPolicy() workloadidentity.Policy {
 		}
 	}
 	p[corev1.EmailServiceSecretService_GetEmailServiceSecret_FullMethodName] = map[string]workloadidentity.Access{}
+	// The approvers' agreement to a lowered change type is workflow's alone: the gateway forwards
+	// users, and a user must not be able to claim an agreement.
+	p[corev1.PolicyService_RecordChangeTypeAgreement_FullMethodName] = map[string]workloadidentity.Access{}
 	for caller, methods := range map[string][]string{
 		CallerDelivery: deliveryMethods, CallerWorkflow: workflowMethods,
 		CallerObligations: obligationsMethods, CallerCollab: collabMethods,

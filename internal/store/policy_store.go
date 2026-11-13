@@ -367,20 +367,21 @@ func (s *PolicyStore) MovePolicies(ctx context.Context, target uuid.UUID, ids []
 // ack_triggers as nil (inherit from the category).
 func (s *PolicyStore) GetPolicy(ctx context.Context, id uuid.UUID) (domain.Policy, error) {
 	var (
-		p                    domain.Policy
-		sensitivity          string
-		docType              string
-		categoryCode         *string
-		categorySlug         string
-		templateID           *uuid.UUID
-		currentPubVID        *uuid.UUID
-		currentDraftVID      *uuid.UUID
-		ackTriggersRaw       *string
-		ackAudienceOverride  pgtype.FlatArray[uuid.UUID]
-		effectiveDate        pgtype.Date
-		retiredAt            *time.Time
-		currentVersionNo     *int
-		currentVersionStatus *string
+		p                          domain.Policy
+		sensitivity                string
+		docType                    string
+		categoryCode               *string
+		categorySlug               string
+		templateID                 *uuid.UUID
+		currentPubVID              *uuid.UUID
+		currentDraftVID            *uuid.UUID
+		ackTriggersRaw             *string
+		ackAudienceOverride        pgtype.FlatArray[uuid.UUID]
+		effectiveDate              pgtype.Date
+		retiredAt                  *time.Time
+		currentVersionNo           *int
+		currentVersionStatus       *string
+		curMajor, curMinor, curFix *int
 	)
 	err := s.db.Querier().QueryRow(ctx,
 		`SELECT p.id, p.home_category_id, p.sequence, p.document_type, g.code, g.slug, p.title, p.sensitivity,
@@ -389,7 +390,7 @@ func (s *PolicyStore) GetPolicy(ctx context.Context, id uuid.UUID) (domain.Polic
 		        p.owner_user_id,
 		        p.ack_triggers, p.ack_audience_override, p.effective_date,
 		        p.created_at, p.updated_at, p.retired_at,
-		        cv.version_no, cv.status
+		        cv.version_no, cv.status, cv.major, cv.minor, cv.fix
 		   FROM policies p JOIN categories g ON g.id = p.home_category_id
 		   LEFT JOIN policy_versions cv ON cv.id = COALESCE(p.current_published_version_id, (SELECT id FROM policy_versions WHERE policy_id = p.id AND status IN ('draft','in_review') LIMIT 1), (SELECT id FROM policy_versions WHERE policy_id = p.id AND status = 'rejected' ORDER BY created_at DESC, id DESC LIMIT 1))
 		  WHERE p.id = $1`, id,
@@ -399,7 +400,7 @@ func (s *PolicyStore) GetPolicy(ctx context.Context, id uuid.UUID) (domain.Polic
 		&p.OwnerUserID,
 		&ackTriggersRaw, &ackAudienceOverride, &effectiveDate,
 		&p.CreatedAt, &p.UpdatedAt, &retiredAt,
-		&currentVersionNo, &currentVersionStatus)
+		&currentVersionNo, &currentVersionStatus, &curMajor, &curMinor, &curFix)
 	if err != nil {
 		return domain.Policy{}, fmt.Errorf("PolicyStore.GetPolicy: %w", err)
 	}
@@ -431,6 +432,7 @@ func (s *PolicyStore) GetPolicy(ctx context.Context, id uuid.UUID) (domain.Polic
 	if currentVersionStatus != nil {
 		p.CurrentVersionStatus = domain.PolicyVersionStatus(*currentVersionStatus)
 	}
+	p.CurrentSemver = semverOf(curMajor, curMinor, curFix)
 	return p, nil
 }
 
@@ -494,7 +496,7 @@ func (s *PolicyStore) ListPolicies(ctx context.Context, categoryID uuid.UUID, in
 		                p.owner_user_id,
 		                p.ack_triggers, p.ack_audience_override,
 		                p.created_at, p.updated_at,
-		                cv.version_no, cv.status
+		                cv.version_no, cv.status, cv.major, cv.minor, cv.fix
 		           FROM policies p
 		           JOIN categories hg ON hg.id = p.home_category_id
 		           LEFT JOIN policy_versions cv ON cv.id = COALESCE(p.current_published_version_id, (SELECT id FROM policy_versions WHERE policy_id = p.id AND status IN ('draft','in_review') LIMIT 1), (SELECT id FROM policy_versions WHERE policy_id = p.id AND status = 'rejected' ORDER BY created_at DESC, id DESC LIMIT 1))
@@ -508,7 +510,7 @@ func (s *PolicyStore) ListPolicies(ctx context.Context, categoryID uuid.UUID, in
 		                p.owner_user_id,
 		                p.ack_triggers, p.ack_audience_override,
 		                p.created_at, p.updated_at,
-		                cv.version_no, cv.status
+		                cv.version_no, cv.status, cv.major, cv.minor, cv.fix
 		           FROM policies p
 		           JOIN categories hg ON hg.id = p.home_category_id
 		           LEFT JOIN policy_versions cv ON cv.id = COALESCE(p.current_published_version_id, (SELECT id FROM policy_versions WHERE policy_id = p.id AND status IN ('draft','in_review') LIMIT 1), (SELECT id FROM policy_versions WHERE policy_id = p.id AND status = 'rejected' ORDER BY created_at DESC, id DESC LIMIT 1))
@@ -525,18 +527,19 @@ func (s *PolicyStore) ListPolicies(ctx context.Context, categoryID uuid.UUID, in
 	var out []domain.Policy
 	for rows.Next() {
 		var (
-			p                    domain.Policy
-			sensitivity          string
-			docType              string
-			categoryCode         *string
-			categorySlug         string
-			templateID           *uuid.UUID
-			currentPubVID        *uuid.UUID
-			currentDraftVID      *uuid.UUID
-			ackTriggersRaw       *string
-			ackAudienceOverride  pgtype.FlatArray[uuid.UUID]
-			currentVersionNo     *int
-			currentVersionStatus *string
+			p                          domain.Policy
+			sensitivity                string
+			docType                    string
+			categoryCode               *string
+			categorySlug               string
+			templateID                 *uuid.UUID
+			currentPubVID              *uuid.UUID
+			currentDraftVID            *uuid.UUID
+			ackTriggersRaw             *string
+			ackAudienceOverride        pgtype.FlatArray[uuid.UUID]
+			currentVersionNo           *int
+			currentVersionStatus       *string
+			curMajor, curMinor, curFix *int
 		)
 		if err := rows.Scan(&p.ID, &p.HomeCategoryID, &p.Sequence, &docType, &categoryCode, &categorySlug, &p.Title, &sensitivity,
 			&templateID, &p.TemplateNone, &currentPubVID,
@@ -544,7 +547,7 @@ func (s *PolicyStore) ListPolicies(ctx context.Context, categoryID uuid.UUID, in
 			&p.OwnerUserID,
 			&ackTriggersRaw, &ackAudienceOverride,
 			&p.CreatedAt, &p.UpdatedAt,
-			&currentVersionNo, &currentVersionStatus); err != nil {
+			&currentVersionNo, &currentVersionStatus, &curMajor, &curMinor, &curFix); err != nil {
 			return nil, fmt.Errorf("PolicyStore.ListPolicies scan: %w", err)
 		}
 		p.DocumentType = domain.DocumentType(docType)
@@ -570,6 +573,7 @@ func (s *PolicyStore) ListPolicies(ctx context.Context, categoryID uuid.UUID, in
 		if currentVersionStatus != nil {
 			p.CurrentVersionStatus = domain.PolicyVersionStatus(*currentVersionStatus)
 		}
+		p.CurrentSemver = semverOf(curMajor, curMinor, curFix)
 		out = append(out, p)
 	}
 	if err := rows.Err(); err != nil {
@@ -819,6 +823,26 @@ func (s *PolicyStore) promoteDraftToPublished(ctx context.Context, tx pgx.Tx, po
 	newVersionNo := maxNonDraftVersionNo + 1
 	now := time.Now().UTC()
 
+	// The semantic version: the change is classified again now, since a version in review stays
+	// editable, and the number is the highest numbered version bumped by the type it publishes
+	// as. The first version is 1.0.0.
+	vc, err := classifyVersion(ctx, tx, versionID)
+	if err != nil {
+		return domain.PolicyVersion{}, fmt.Errorf("classify: %w", err)
+	}
+	state, err := loadChangeState(ctx, tx, versionID)
+	if err != nil {
+		return domain.PolicyVersion{}, err
+	}
+	finalType := domain.FinalizeChange(state, vc.cls.Type)
+	if !vc.hasBase {
+		finalType = domain.ChangeTypeMajor
+	}
+	sv := vc.base.Bump(finalType)
+	state.Suggested, state.Type, state.Requested = vc.cls.Type, finalType, ""
+	logger.Ctx(ctx).Debug("publish: version numbered", log.F("policy_id", policyID.String()), log.F("version_id", versionID.String()),
+		log.F("version_no", newVersionNo), log.F("semver", sv.String()), log.F("change_type", string(finalType)), log.F("suggested", string(vc.cls.Type)))
+
 	// A staged rename is read before promoting so it goes live with the
 	// version, on both publish paths.
 	var proposedTitle *string
@@ -843,6 +867,7 @@ func (s *PolicyStore) promoteDraftToPublished(ctx context.Context, tx pgx.Tx, po
 		supersedesID    *uuid.UUID
 		publishedAtNull *time.Time
 		tvNull          *uuid.UUID
+		x               pvSemverScan
 	)
 	err = tx.QueryRow(ctx,
 		`UPDATE policy_versions
@@ -850,18 +875,22 @@ func (s *PolicyStore) promoteDraftToPublished(ctx context.Context, tx pgx.Tx, po
 		        version_no = $2,
 		        published_at = COALESCE(published_at, $3),
 		        supersedes_version_id = $4,
-		        proposed_title = NULL
+		        proposed_title = NULL,
+		        major = $5, minor = $6, fix = $7,
+		        suggested_change_type = $8, change_type = $9, requested_change_type = NULL
 		  WHERE id = $1
 		 RETURNING id, policy_id, version_no, status, template_version_id,
 		           content::text, created_at, published_at, created_by,
-		           supersedes_version_id`,
+		           supersedes_version_id, `+pvSemverCols,
 		versionID, newVersionNo, now, prevPublishedID,
-	).Scan(&pv.ID, &pv.PolicyID, &pv.VersionNo, &status, &tvNull,
+		sv.Major, sv.Minor, sv.Fix, string(state.Suggested), string(state.Type),
+	).Scan(append([]any{&pv.ID, &pv.PolicyID, &pv.VersionNo, &status, &tvNull,
 		&pv.ContentJSON, &pv.CreatedAt, &publishedAtNull, &pv.CreatedBy,
-		&supersedesID)
+		&supersedesID}, x.dests()...)...)
 	if err != nil {
 		return domain.PolicyVersion{}, fmt.Errorf("promote: %w", err)
 	}
+	x.apply(&pv)
 	if tvNull != nil {
 		pv.TemplateVersionID = *tvNull
 	}
@@ -905,7 +934,11 @@ func (s *PolicyStore) promoteDraftToPublished(ctx context.Context, tx pgx.Tx, po
 // stamps published_at and points the policy at the version; withdrawing to
 // draft clears both. An illegal transition returns an error the handler maps
 // to FailedPrecondition.
-func (s *PolicyStore) SetVersionStatus(ctx context.Context, policyVersionID uuid.UUID, target domain.PolicyVersionStatus) (domain.PolicyVersion, error) {
+func (s *PolicyStore) SetVersionStatus(ctx context.Context, policyVersionID uuid.UUID, target domain.PolicyVersionStatus, opts ...StatusOption) (domain.PolicyVersion, error) {
+	var so statusOpts
+	for _, o := range opts {
+		o(&so)
+	}
 	var pv domain.PolicyVersion
 	err := s.db.RunInTx(ctx, func(tx pgx.Tx) error {
 		var err error
@@ -958,7 +991,7 @@ func (s *PolicyStore) SetVersionStatus(ctx context.Context, policyVersionID uuid
 			}
 		case domain.PolicyVersionStatusDraft:
 			if _, err := tx.Exec(ctx,
-				`UPDATE policy_versions SET status = 'draft', published_at = NULL WHERE id = $1`,
+				`UPDATE policy_versions SET status = 'draft', published_at = NULL, major = 0, minor = 0, fix = 0 WHERE id = $1`,
 				policyVersionID,
 			); err != nil {
 				return fmt.Errorf("PolicyStore.SetVersionStatus withdraw: %w", err)
@@ -977,6 +1010,13 @@ func (s *PolicyStore) SetVersionStatus(ctx context.Context, policyVersionID uuid
 			); err != nil {
 				return fmt.Errorf("PolicyStore.SetVersionStatus update: %w", err)
 			}
+			// The submit: classify the change against the numbered version before and apply the
+			// author's pick, in the same transaction, so a refused pick leaves the draft a draft.
+			if target == domain.PolicyVersionStatusInReview && current == domain.PolicyVersionStatusDraft {
+				if err := recordSubmit(ctx, tx, policyVersionID, so); err != nil {
+					return err
+				}
+			}
 		}
 
 		var (
@@ -984,17 +1024,19 @@ func (s *PolicyStore) SetVersionStatus(ctx context.Context, policyVersionID uuid
 			publishedAtNull *time.Time
 			supersedesID    *uuid.UUID
 			tvNull          *uuid.UUID
+			x               pvSemverScan
 		)
 		err = tx.QueryRow(ctx,
 			`SELECT id, policy_id, version_no, status, template_version_id,
-			        content::text, created_at, published_at, created_by, supersedes_version_id
+			        content::text, created_at, published_at, created_by, supersedes_version_id, `+pvSemverCols+`
 			   FROM policy_versions WHERE id = $1`,
 			policyVersionID,
-		).Scan(&pv.ID, &pv.PolicyID, &pv.VersionNo, &statusOut, &tvNull,
-			&pv.ContentJSON, &pv.CreatedAt, &publishedAtNull, &pv.CreatedBy, &supersedesID)
+		).Scan(append([]any{&pv.ID, &pv.PolicyID, &pv.VersionNo, &statusOut, &tvNull,
+			&pv.ContentJSON, &pv.CreatedAt, &publishedAtNull, &pv.CreatedBy, &supersedesID}, x.dests()...)...)
 		if err != nil {
 			return fmt.Errorf("PolicyStore.SetVersionStatus readback: %w", err)
 		}
+		x.apply(&pv)
 		if tvNull != nil {
 			pv.TemplateVersionID = *tvNull
 		}
@@ -1005,8 +1047,7 @@ func (s *PolicyStore) SetVersionStatus(ctx context.Context, policyVersionID uuid
 		if supersedesID != nil {
 			pv.SupersedesVersionID = *supersedesID
 		}
-
-		return nil
+		return projectVersion(ctx, tx, &pv)
 	})
 	if err != nil {
 		return domain.PolicyVersion{}, err
@@ -1024,18 +1065,20 @@ func (s *PolicyStore) GetPolicyVersion(ctx context.Context, id uuid.UUID) (domai
 		supersedesID    *uuid.UUID
 		tvNull          *uuid.UUID
 		proposedTitle   *string
+		x               pvSemverScan
 	)
 	err := s.db.Querier().QueryRow(ctx,
 		`SELECT id, policy_id, version_no, status, template_version_id,
 		        content::text, created_at, published_at, created_by,
-		        supersedes_version_id, proposed_title
+		        supersedes_version_id, proposed_title, `+pvSemverCols+`
 		   FROM policy_versions WHERE id = $1`, id,
-	).Scan(&pv.ID, &pv.PolicyID, &pv.VersionNo, &status, &tvNull,
+	).Scan(append([]any{&pv.ID, &pv.PolicyID, &pv.VersionNo, &status, &tvNull,
 		&pv.ContentJSON, &pv.CreatedAt, &publishedAtNull, &pv.CreatedBy,
-		&supersedesID, &proposedTitle)
+		&supersedesID, &proposedTitle}, x.dests()...)...)
 	if err != nil {
 		return domain.PolicyVersion{}, fmt.Errorf("PolicyStore.GetPolicyVersion: %w", err)
 	}
+	x.apply(&pv)
 	if tvNull != nil {
 		pv.TemplateVersionID = *tvNull
 	}
@@ -1047,6 +1090,9 @@ func (s *PolicyStore) GetPolicyVersion(ctx context.Context, id uuid.UUID) (domai
 		pv.SupersedesVersionID = *supersedesID
 	}
 	pv.ProposedTitle = proposedTitle
+	if err := projectVersion(ctx, s.db.Querier(), &pv); err != nil {
+		return domain.PolicyVersion{}, fmt.Errorf("PolicyStore.GetPolicyVersion: project: %w", err)
+	}
 	return pv, nil
 }
 
@@ -1056,7 +1102,7 @@ func (s *PolicyStore) GetPolicyVersion(ctx context.Context, id uuid.UUID) (domai
 func (s *PolicyStore) ListPublishedVersions(ctx context.Context, policyID uuid.UUID) ([]domain.PolicyVersion, error) {
 	rows, err := s.db.Querier().Query(ctx,
 		`SELECT id, policy_id, version_no, status, template_version_id,
-		        content::text, created_at, published_at, created_by, supersedes_version_id
+		        content::text, created_at, published_at, created_by, supersedes_version_id, `+pvSemverCols+`
 		   FROM policy_versions
 		  WHERE policy_id = $1 AND status NOT IN ('draft', 'in_review', 'rejected')
 		  ORDER BY version_no ASC`, policyID)
@@ -1072,11 +1118,13 @@ func (s *PolicyStore) ListPublishedVersions(ctx context.Context, policyID uuid.U
 			publishedAtNull *time.Time
 			supersedesID    *uuid.UUID
 			tvNull          *uuid.UUID
+			x               pvSemverScan
 		)
-		if err := rows.Scan(&pv.ID, &pv.PolicyID, &pv.VersionNo, &status, &tvNull,
-			&pv.ContentJSON, &pv.CreatedAt, &publishedAtNull, &pv.CreatedBy, &supersedesID); err != nil {
+		if err := rows.Scan(append([]any{&pv.ID, &pv.PolicyID, &pv.VersionNo, &status, &tvNull,
+			&pv.ContentJSON, &pv.CreatedAt, &publishedAtNull, &pv.CreatedBy, &supersedesID}, x.dests()...)...); err != nil {
 			return nil, fmt.Errorf("PolicyStore.ListPublishedVersions scan: %w", err)
 		}
+		x.apply(&pv)
 		if tvNull != nil {
 			pv.TemplateVersionID = *tvNull
 		}

@@ -1,0 +1,29 @@
+// Copyright 2026 The Steward Authors
+// SPDX-License-Identifier: Apache-2.0
+
+syntax = "proto3";
+
+package steward.core.v1;
+
+option go_package = "github.com/Steward-GRC/steward-core/gen/go/steward/core/v1;corev1";
+
+// ChangeType is how big a change is. It decides which part of the semantic
+// version a publish raises: Major raises MAJOR and resets the rest, Minor
+// raises MINOR and resets FIX, Fix raises FIX. Unset means not decided.
+enum ChangeType {
+  CHANGE_TYPE_UNSPECIFIED = 0;
+  CHANGE_TYPE_MAJOR = 1;
+  CHANGE_TYPE_MINOR = 2;
+  CHANGE_TYPE_FIX = 3;
+}
+
+// SemanticVersion is MAJOR.MINOR.FIX. A message that carries one leaves it
+// unset when there is no number to give; a draft carries the number a publish
+// would give it, and says so in its own fields.
+message SemanticVersion {
+  int32 major = 1;
+  int32 minor = 2;
+  int32 fix = 3;
+  // The rendered form, for example "2.1.0".
+  string text = 4;
+}

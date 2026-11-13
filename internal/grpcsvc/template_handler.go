@@ -18,6 +18,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // TemplateStorer is the store interface the TemplateHandler depends on.
@@ -109,23 +110,36 @@ func templateToProto(t domain.Template) *corev1.Template {
 	if t.RetiredAt != nil {
 		retiredAt = t.RetiredAt.UTC().Format(time.RFC3339)
 	}
-	return &corev1.Template{
+	out := &corev1.Template{
 		Id:              t.ID.String(),
 		Code:            t.Code,
 		Name:            t.Name,
 		OwnerCategoryId: nilableUUID(t.OwnerCategoryID),
 		RetiredAt:       retiredAt,
 	}
+	if !t.UpdatedAt.IsZero() {
+		out.UpdatedAt = timestamppb.New(t.UpdatedAt)
+	}
+	return out
 }
 
 func templateVersionToProto(tv domain.TemplateVersion) *corev1.TemplateVersion {
-	return &corev1.TemplateVersion{
-		Id:         tv.ID.String(),
-		TemplateId: tv.TemplateID.String(),
-		VersionNo:  toInt32(tv.VersionNo),
-		Status:     templateVersionStatusToProto(tv.Status),
-		Sections:   sectionsToProto(tv.Sections),
+	out := &corev1.TemplateVersion{
+		Id:              tv.ID.String(),
+		TemplateId:      tv.TemplateID.String(),
+		VersionNo:       toInt32(tv.VersionNo),
+		Status:          templateVersionStatusToProto(tv.Status),
+		Sections:        sectionsToProto(tv.Sections),
+		SemanticVersion: semverToProto(tv.Semver),
+		ChangeType:      changeTypeToProto(tv.ChangeType),
 	}
+	if !tv.CreatedAt.IsZero() {
+		out.CreatedAt = timestamppb.New(tv.CreatedAt)
+	}
+	if tv.PublishedAt != nil {
+		out.PublishedAt = timestamppb.New(*tv.PublishedAt)
+	}
+	return out
 }
 
 func templateVersionStatusToProto(s domain.TemplateVersionStatus) corev1.TemplateVersionStatus {

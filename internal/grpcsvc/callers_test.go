@@ -63,7 +63,10 @@ func TestCallerPolicyCoversEveryMethodAndNothingElse(t *testing.T) {
 func TestCallerPolicyGateway(t *testing.T) {
 	want := map[string]workloadidentity.Access{}
 	for _, m := range allMethods() {
-		if m != corev1.EmailServiceSecretService_GetEmailServiceSecret_FullMethodName {
+		// The secret never reaches a browser, and the approvers' agreement to a lowered change
+		// type is workflow's to write: a client must not be able to claim it.
+		if m != corev1.EmailServiceSecretService_GetEmailServiceSecret_FullMethodName &&
+			m != corev1.PolicyService_RecordChangeTypeAgreement_FullMethodName {
 			want[m] = workloadidentity.OnBehalf
 		}
 	}
@@ -86,6 +89,8 @@ func TestCallerPolicyWorkflow(t *testing.T) {
 		corev1.PolicyService_GetPolicy_FullMethodName:             workloadidentity.Self,
 		corev1.PolicyService_GetPolicyVersion_FullMethodName:      workloadidentity.Self,
 		corev1.PolicyService_SetVersionStatus_FullMethodName:      workloadidentity.Self,
+		// core#28: workflow records who agreed to lower a change type.
+		corev1.PolicyService_RecordChangeTypeAgreement_FullMethodName: workloadidentity.Self,
 		// core#114: workflow reads the site work calendar when a document is submitted.
 		corev1.SettingsService_GetGlobalSettings_FullMethodName: workloadidentity.Self,
 	})
