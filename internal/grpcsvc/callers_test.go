@@ -86,7 +86,30 @@ func TestCallerPolicyWorkflow(t *testing.T) {
 		corev1.PolicyService_GetPolicy_FullMethodName:             workloadidentity.Self,
 		corev1.PolicyService_GetPolicyVersion_FullMethodName:      workloadidentity.Self,
 		corev1.PolicyService_SetVersionStatus_FullMethodName:      workloadidentity.Self,
+		// core#114: workflow reads the site work calendar when a document is submitted.
+		corev1.SettingsService_GetGlobalSettings_FullMethodName: workloadidentity.Self,
 	})
+}
+
+// workflow reads the global settings but never writes them or touches the email-service config, and no other
+// internal caller gains the read.
+func TestCallerPolicyGetGlobalSettings(t *testing.T) {
+	p := CallerPolicy()
+	got, ok := p.Lookup(corev1.SettingsService_GetGlobalSettings_FullMethodName, CallerWorkflow)
+	require.True(t, ok, "workflow must be allowed")
+	require.Equal(t, workloadidentity.Self, got)
+	for _, m := range []string{
+		corev1.SettingsService_SetGlobalSettings_FullMethodName,
+		corev1.SettingsService_SetEmailServiceConfig_FullMethodName,
+		corev1.SettingsService_EmailServiceConfigStatus_FullMethodName,
+	} {
+		_, ok = p.Lookup(m, CallerWorkflow)
+		require.False(t, ok, "workflow must be refused %s", m)
+	}
+	for _, caller := range []string{CallerDelivery, CallerObligations, CallerCollab, CallerIdentity, "ai"} {
+		_, ok = p.Lookup(corev1.SettingsService_GetGlobalSettings_FullMethodName, caller)
+		require.False(t, ok, "%s must be refused", caller)
+	}
 }
 
 func TestCallerPolicyObligations(t *testing.T) {

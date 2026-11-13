@@ -48,6 +48,8 @@ var (
 		corev1.PolicyService_GetPolicy_FullMethodName,
 		corev1.PolicyService_GetPolicyVersion_FullMethodName,
 		corev1.PolicyService_SetVersionStatus_FullMethodName,
+		// core#114: the site work calendar, read when a document is submitted.
+		corev1.SettingsService_GetGlobalSettings_FullMethodName,
 	}
 	obligationsMethods = []string{
 		corev1.CategoryService_GetCategory_FullMethodName,
