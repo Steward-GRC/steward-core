@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"strconv"
+	"strings"
 	"time"
 
 	log "github.com/Bugs5382/go-log"
@@ -47,7 +48,9 @@ type PolicyStorer interface {
 	DiscardDraft(ctx context.Context, policyID uuid.UUID) error
 	DeletePolicy(ctx context.Context, policyID uuid.UUID) error
 	RetirePolicy(ctx context.Context, id uuid.UUID) (domain.Policy, error)
-	SetVersionStatus(ctx context.Context, policyVersionID uuid.UUID, target domain.PolicyVersionStatus) (domain.PolicyVersion, error)
+	SetVersionStatus(ctx context.Context, policyVersionID uuid.UUID, target domain.PolicyVersionStatus, opts ...store.StatusOption) (domain.PolicyVersion, error)
+	SetVersionChangeType(ctx context.Context, policyVersionID uuid.UUID, ct domain.ChangeType, reason string, actor uuid.UUID) (domain.PolicyVersion, error)
+	RecordChangeTypeAgreement(ctx context.Context, policyVersionID uuid.UUID, agreedBy []uuid.UUID) (domain.PolicyVersion, error)
 	SetOwner(ctx context.Context, policyID, ownerUserID uuid.UUID) (domain.Policy, error)
 	SetSensitivity(ctx context.Context, policyID uuid.UUID, sensitivity domain.Sensitivity) (domain.Policy, error)
 	SetTitle(ctx context.Context, policyID uuid.UUID, title string) (domain.Policy, error)
@@ -240,6 +243,7 @@ func policyToProto(p domain.Policy) *corev1.Policy {
 		proto.CurrentVersionNo = toInt32(p.CurrentVersionNo)
 		proto.CurrentVersionStatus = policyVersionStatusToProto(p.CurrentVersionStatus)
 	}
+	proto.CurrentSemanticVersion = semverToProto(p.CurrentSemver)
 	return proto
 }
 
@@ -251,6 +255,14 @@ func policyVersionToProto(pv domain.PolicyVersion) *corev1.PolicyVersion {
 		Status:            policyVersionStatusToProto(pv.Status),
 		TemplateVersionId: nilableUUID(pv.TemplateVersionID),
 		ContentJson:       pv.ContentJSON,
+
+		SemanticVersion:     semverToProto(pv.Semver),
+		SuggestedChangeType: changeTypeToProto(pv.Change.Suggested),
+		ChangeType:          changeTypeToProto(pv.Change.Type),
+		RequestedChangeType: changeTypeToProto(pv.Change.Requested),
+		ChangeTypeReason:    pv.Change.Reason,
+		ChangeTypeSetBy:     nilableUUID(pv.Change.SetBy),
+		ChangeTypeAgreedBy:  idStrings(pv.Change.AgreedBy),
 	}
 	if !pv.CreatedAt.IsZero() {
 		proto.CreatedAt = timestamppb.New(pv.CreatedAt)
@@ -1163,11 +1175,25 @@ func (h *PolicyHandler) SetVersionStatus(ctx context.Context, req *corev1.SetVer
 		logger.Ctx(ctx).Debug("submit refused: version holds no text", log.F("version_id", pvID.String()))
 		return nil, status.Error(codes.FailedPrecondition, "submit refused: the document holds no text")
 	}
+	// The author's change-type pick rides on the submit only. It names a user, so a machine
+	// actor cannot carry one.
+	var opts []store.StatusOption
+	if pick := changeTypeFromProto(req.GetChangeType()); pick != "" && target == domain.PolicyVersionStatusInReview && cur.Status == domain.PolicyVersionStatusDraft {
+		actorID, aerr := uuid.Parse(req.GetActorUserId())
+		if aerr != nil {
+			return nil, status.Error(codes.InvalidArgument, "a change type pick needs the author's actor_user_id")
+		}
+		opts = append(opts, store.WithChangePick(pick, req.GetChangeTypeReason(), actorID))
+	}
 	logger.Ctx(ctx).Debug("set version status",
-		log.F("version_id", pvID.String()), log.F("from", string(cur.Status)), log.F("to", string(target)))
+		log.F("version_id", pvID.String()), log.F("from", string(cur.Status)), log.F("to", string(target)),
+		log.F("change_pick", len(opts) > 0))
 
-	pv, err := h.store.SetVersionStatus(ctx, pvID, target)
+	pv, err := h.store.SetVersionStatus(ctx, pvID, target, opts...)
 	if err != nil {
+		if errors.Is(err, domain.ErrChangeReasonRequired) {
+			return nil, status.Errorf(codes.InvalidArgument, "%v", err)
+		}
 		// The transition was validated above, so a store-side transition error means the row
 		// changed underneath us.
 		if errors.Is(err, domain.ErrInvalidVersionStatusTransition) {
@@ -1176,11 +1202,24 @@ func (h *PolicyHandler) SetVersionStatus(ctx context.Context, req *corev1.SetVer
 		return nil, status.Errorf(codes.Internal, "set version status: %v", err)
 	}
 	if h.auditor != nil {
+		attrs := map[string]string{"status": string(target), "from": string(cur.Status)}
+		if target == domain.PolicyVersionStatusInReview && cur.Status == domain.PolicyVersionStatusDraft {
+			// The submit classified the change: record what core suggested and what stands.
+			attrs["suggested_change_type"] = string(pv.Change.Suggested)
+			attrs["change_type"] = string(pv.Change.Type)
+			if pv.Change.Requested != "" {
+				attrs["requested_change_type"] = string(pv.Change.Requested)
+			}
+		}
+		if target == domain.PolicyVersionStatusPublished && pv.Semver != (domain.SemVer{}) {
+			attrs["semantic_version"] = pv.Semver.String()
+			attrs["change_type"] = string(pv.Change.Type)
+		}
 		_ = h.auditor.Emit(ctx, audit.Event{
 			Tier: audit.TierAudit, Action: "policy.status_set",
 			ActorUserID: req.GetActorUserId(),
 			Subject:     "policy_version:" + pv.ID.String(),
-			Attributes:  map[string]string{"status": string(target), "from": string(cur.Status)},
+			Attributes:  attrs,
 		})
 	}
 	// The status changed: drop the cached version and the version list.
@@ -1195,6 +1234,105 @@ func (h *PolicyHandler) SetVersionStatus(ctx context.Context, req *corev1.SetVer
 		h.emitPublishedLifecycle(ctx, pv.PolicyID, pv)
 	}
 	return &corev1.SetVersionStatusResponse{Version: policyVersionToProto(pv)}, nil
+}
+
+// changeTypeStoreError maps what the change-type writes refuse to a gRPC status.
+func changeTypeStoreError(ctx context.Context, op, versionID string, err error) error {
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		return status.Error(codes.NotFound, "policy version not found")
+	case errors.Is(err, domain.ErrChangeReasonRequired), errors.Is(err, domain.ErrAgreementNeedsApprovers):
+		return status.Errorf(codes.InvalidArgument, "%v", err)
+	case errors.Is(err, store.ErrChangeTypeLocked), errors.Is(err, store.ErrFirstVersion), errors.Is(err, domain.ErrNoPendingLowering):
+		return status.Errorf(codes.FailedPrecondition, "%v", err)
+	}
+	logger.Ctx(ctx).Error(err, op+" failed", log.F("version_id", versionID))
+	return status.Errorf(codes.Internal, "%s failed", op)
+}
+
+// SetVersionChangeType handles PolicyService.SetVersionChangeType: the author's pick of the change
+// type for a draft or a version in review. A pick below the suggestion needs a reason and only
+// records a request; the type changes when workflow records the approvers' agreement.
+func (h *PolicyHandler) SetVersionChangeType(ctx context.Context, req *corev1.SetVersionChangeTypeRequest) (*corev1.SetVersionChangeTypeResponse, error) {
+	pvID, err := uuid.Parse(req.GetPolicyVersionId())
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid policy_version_id: %v", err)
+	}
+	ct := changeTypeFromProto(req.GetChangeType())
+	if ct == "" {
+		return nil, status.Error(codes.InvalidArgument, "change_type must be MAJOR, MINOR or FIX")
+	}
+	actor, err := uuid.Parse(req.GetActorUserId())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "a change type pick needs the author's actor_user_id")
+	}
+	l := logger.Ctx(ctx)
+	l.Debug("set version change type", log.F("version_id", pvID.String()), log.F("change_type", string(ct)))
+	pv, err := h.store.SetVersionChangeType(ctx, pvID, ct, req.GetReason(), actor)
+	if err != nil {
+		l.Debug("set version change type refused", log.F("version_id", pvID.String()), log.F("error", err.Error()))
+		return nil, changeTypeStoreError(ctx, "set version change type", pvID.String(), err)
+	}
+	if h.auditor != nil {
+		attrs := map[string]string{"picked": string(ct), "change_type": string(pv.Change.Type), "suggested_change_type": string(pv.Change.Suggested)}
+		if pv.Change.Requested != "" {
+			attrs["requested_change_type"] = string(pv.Change.Requested)
+		}
+		_ = h.auditor.Emit(ctx, audit.Event{
+			Tier: audit.TierAudit, Action: "policy.change_type_set",
+			ActorUserID: req.GetActorUserId(),
+			Subject:     "policy_version:" + pv.ID.String(),
+			Attributes:  attrs,
+		})
+	}
+	l.Debug("version change type set", log.F("version_id", pvID.String()), log.F("change_type", string(pv.Change.Type)),
+		log.F("requested", string(pv.Change.Requested)))
+	return &corev1.SetVersionChangeTypeResponse{Version: policyVersionToProto(pv)}, nil
+}
+
+// RecordChangeTypeAgreement handles PolicyService.RecordChangeTypeAgreement: workflow writes who
+// agreed to lower a version's change type, which applies the pending lowering.
+func (h *PolicyHandler) RecordChangeTypeAgreement(ctx context.Context, req *corev1.RecordChangeTypeAgreementRequest) (*corev1.RecordChangeTypeAgreementResponse, error) {
+	pvID, err := uuid.Parse(req.GetPolicyVersionId())
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid policy_version_id: %v", err)
+	}
+	if len(req.GetAgreedByUserIds()) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "agreed_by_user_ids must name the approvers who agreed")
+	}
+	agreed := make([]uuid.UUID, 0, len(req.GetAgreedByUserIds()))
+	for _, s := range req.GetAgreedByUserIds() {
+		id, perr := uuid.Parse(s)
+		if perr != nil {
+			return nil, status.Errorf(codes.InvalidArgument, "invalid agreed_by_user_ids entry: %v", perr)
+		}
+		agreed = append(agreed, id)
+	}
+	if !isSystemActor(req.GetActorUserId()) {
+		if _, aerr := parseOptionalUUID(req.GetActorUserId()); aerr != nil {
+			return nil, status.Errorf(codes.InvalidArgument, "invalid actor_user_id: %v", aerr)
+		}
+	}
+	l := logger.Ctx(ctx)
+	l.Debug("record change type agreement", log.F("version_id", pvID.String()), log.F("approvers", len(agreed)))
+	pv, err := h.store.RecordChangeTypeAgreement(ctx, pvID, agreed)
+	if err != nil {
+		l.Debug("record change type agreement refused", log.F("version_id", pvID.String()), log.F("error", err.Error()))
+		return nil, changeTypeStoreError(ctx, "record change type agreement", pvID.String(), err)
+	}
+	if h.auditor != nil {
+		_ = h.auditor.Emit(ctx, audit.Event{
+			Tier: audit.TierAudit, Action: "policy.change_type_agreed",
+			ActorUserID: req.GetActorUserId(),
+			Subject:     "policy_version:" + pv.ID.String(),
+			Attributes: map[string]string{
+				"agreed_by":   strings.Join(req.GetAgreedByUserIds(), ","),
+				"change_type": string(pv.Change.Type),
+			},
+		})
+	}
+	l.Debug("change type lowering applied", log.F("version_id", pvID.String()), log.F("change_type", string(pv.Change.Type)))
+	return &corev1.RecordChangeTypeAgreementResponse{Version: policyVersionToProto(pv)}, nil
 }
 
 // emitPublishedLifecycle publishes the version's content and access metadata on the jobs exchange.
@@ -1278,6 +1416,8 @@ func (h *PolicyHandler) buildVersionContent(ctx context.Context, policyID uuid.U
 		PolicyID:    pv.PolicyID.String(),
 		VersionID:   pv.ID.String(),
 		VersionNo:   pv.VersionNo,
+		Semver:      semverText(pv.Semver),
+		ChangeType:  string(pv.Change.Type),
 		CategoryID:  categoryIDStr,
 		Sensitivity: string(pol.Sensitivity),
 		PolicyTitle: pol.Title,
@@ -1775,11 +1915,17 @@ func (h *PolicyHandler) ListObligatingPolicies(ctx context.Context, _ *corev1.Li
 		if !requiresAck {
 			continue
 		}
-		var versionNo int32
+		var (
+			versionNo int32
+			semver    *corev1.SemanticVersion
+			change    corev1.ChangeType
+		)
 		if p.CurrentPublishedVersionID != uuid.Nil {
 			pv, err := h.store.GetPolicyVersion(ctx, p.CurrentPublishedVersionID)
 			if err == nil {
 				versionNo = toInt32(pv.VersionNo)
+				semver = semverToProto(pv.Semver)
+				change = changeTypeToProto(pv.Change.Type)
 			}
 		}
 		out = append(out, &corev1.ObligatingPolicy{
@@ -1793,7 +1939,9 @@ func (h *PolicyHandler) ListObligatingPolicies(ctx context.Context, _ *corev1.Li
 			Everyone:           everyone,
 			// Always a policy (procedures are excluded above); carried so the response describes
 			// itself.
-			DocumentType: docTypeToProto(p.DocumentType),
+			DocumentType:    docTypeToProto(p.DocumentType),
+			SemanticVersion: semver,
+			ChangeType:      change,
 		})
 	}
 	return &corev1.ListObligatingPoliciesResponse{Policies: out}, nil
@@ -1986,4 +2134,12 @@ func (h *PolicyHandler) SetPolicyTemplate(ctx context.Context, req *corev1.SetPo
 // decide, so a move refuses a document the target does not take (CATEGORY_REFUSES_TYPE).
 func categoryAcceptsType(c domain.Category, dt domain.DocumentType) bool {
 	return c.DocumentTypes.Accepts(dt)
+}
+
+// semverText renders a semantic version, or "" for the zero version.
+func semverText(v domain.SemVer) string {
+	if v.IsZero() {
+		return ""
+	}
+	return v.String()
 }

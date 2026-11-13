@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 
+	log "github.com/Bugs5382/go-log"
 	postgres "github.com/Bugs5382/go-postgres"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -79,9 +80,9 @@ func (s *TemplateStore) GetTemplate(ctx context.Context, id uuid.UUID) (domain.T
 		ownerID *uuid.UUID
 	)
 	err := s.db.Querier().QueryRow(ctx,
-		`SELECT id, code, name, owner_category_id, created_at
+		`SELECT id, code, name, owner_category_id, created_at, GREATEST(updated_at, COALESCE((SELECT MAX(GREATEST(v.created_at, COALESCE(v.published_at, v.created_at))) FROM template_versions v WHERE v.template_id = templates.id), updated_at))
 		   FROM templates WHERE id = $1`, id,
-	).Scan(&t.ID, &t.Code, &t.Name, &ownerID, &t.CreatedAt)
+	).Scan(&t.ID, &t.Code, &t.Name, &ownerID, &t.CreatedAt, &t.UpdatedAt)
 	if err != nil {
 		return domain.Template{}, fmt.Errorf("TemplateStore.GetTemplate: %w", err)
 	}
@@ -96,7 +97,7 @@ func (s *TemplateStore) GetTemplate(ctx context.Context, id uuid.UUID) (domain.T
 // new policies; their published versions still resolve via GetTemplateVersion
 // for policies that already pinned them.
 func (s *TemplateStore) ListTemplates(ctx context.Context, ownerCategoryID *uuid.UUID) ([]domain.Template, error) {
-	q := `SELECT id, code, name, owner_category_id, created_at FROM templates WHERE retired_at IS NULL`
+	q := `SELECT id, code, name, owner_category_id, created_at, GREATEST(updated_at, COALESCE((SELECT MAX(GREATEST(v.created_at, COALESCE(v.published_at, v.created_at))) FROM template_versions v WHERE v.template_id = templates.id), updated_at)) FROM templates WHERE retired_at IS NULL`
 	args := []any{}
 	if ownerCategoryID != nil {
 		q += ` AND owner_category_id = $1`
@@ -114,7 +115,7 @@ func (s *TemplateStore) ListTemplates(ctx context.Context, ownerCategoryID *uuid
 			t       domain.Template
 			ownerID *uuid.UUID
 		)
-		if err := rows.Scan(&t.ID, &t.Code, &t.Name, &ownerID, &t.CreatedAt); err != nil {
+		if err := rows.Scan(&t.ID, &t.Code, &t.Name, &ownerID, &t.CreatedAt, &t.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("TemplateStore.ListTemplates scan: %w", err)
 		}
 		if ownerID != nil {
@@ -137,8 +138,8 @@ func (s *TemplateStore) RetireTemplate(ctx context.Context, id uuid.UUID) (domai
 	err := s.db.Querier().QueryRow(ctx,
 		`UPDATE templates SET retired_at = now()
 		   WHERE id = $1 AND retired_at IS NULL
-		 RETURNING id, code, name, owner_category_id, created_at, retired_at`, id,
-	).Scan(&t.ID, &t.Code, &t.Name, &ownerID, &t.CreatedAt, &t.RetiredAt)
+		 RETURNING id, code, name, owner_category_id, created_at, retired_at, updated_at`, id,
+	).Scan(&t.ID, &t.Code, &t.Name, &ownerID, &t.CreatedAt, &t.RetiredAt, &t.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return domain.Template{}, ErrTemplateNotFound
@@ -161,8 +162,8 @@ func (s *TemplateStore) RenameTemplate(ctx context.Context, id uuid.UUID, name s
 	err := s.db.Querier().QueryRow(ctx,
 		`UPDATE templates SET name = $2, updated_at = now()
 		   WHERE id = $1
-		 RETURNING id, code, name, owner_category_id, created_at, retired_at`, id, name,
-	).Scan(&t.ID, &t.Code, &t.Name, &ownerID, &t.CreatedAt, &t.RetiredAt)
+		 RETURNING id, code, name, owner_category_id, created_at, retired_at, updated_at`, id, name,
+	).Scan(&t.ID, &t.Code, &t.Name, &ownerID, &t.CreatedAt, &t.RetiredAt, &t.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return domain.Template{}, ErrTemplateNotFound
@@ -205,13 +206,14 @@ func (s *TemplateStore) UpdateTemplateVersionSections(ctx context.Context, id uu
 		tv      domain.TemplateVersion
 		status  string
 		outJSON []byte
+		x       tvSemverScan
 	)
 	err = s.db.Querier().QueryRow(ctx,
 		`UPDATE template_versions SET sections = $2
 		   WHERE id = $1 AND status = 'draft'
-		 RETURNING id, template_id, version_no, status, sections, created_at`,
+		 RETURNING `+tvCols,
 		id, sectionsJSON,
-	).Scan(&tv.ID, &tv.TemplateID, &tv.VersionNo, &status, &outJSON, &tv.CreatedAt)
+	).Scan(append([]any{&tv.ID, &tv.TemplateID, &tv.VersionNo, &status, &outJSON, &tv.CreatedAt}, x.dests()...)...)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return domain.TemplateVersion{}, ErrTemplateVersionNotEditable
@@ -222,6 +224,10 @@ func (s *TemplateStore) UpdateTemplateVersionSections(ctx context.Context, id uu
 	if err := json.Unmarshal(outJSON, &tv.Sections); err != nil {
 		return domain.TemplateVersion{}, fmt.Errorf("TemplateStore.UpdateTemplateVersionSections: unmarshal sections: %w", err)
 	}
+	x.apply(&tv)
+	if err := projectTemplateVersion(ctx, s.db.Querier(), &tv); err != nil {
+		return domain.TemplateVersion{}, fmt.Errorf("TemplateStore.UpdateTemplateVersionSections: project: %w", err)
+	}
 	return tv, nil
 }
 
@@ -229,7 +235,7 @@ func (s *TemplateStore) UpdateTemplateVersionSections(ctx context.Context, id uu
 // newest first.
 func (s *TemplateStore) ListTemplateVersions(ctx context.Context, templateID uuid.UUID) ([]domain.TemplateVersion, error) {
 	rows, err := s.db.Querier().Query(ctx,
-		`SELECT id, template_id, version_no, status, sections, created_at
+		`SELECT `+tvCols+`
 		   FROM template_versions WHERE template_id = $1
 		 ORDER BY version_no DESC`, templateID)
 	if err != nil {
@@ -242,17 +248,38 @@ func (s *TemplateStore) ListTemplateVersions(ctx context.Context, templateID uui
 			tv           domain.TemplateVersion
 			status       string
 			sectionsJSON []byte
+			x            tvSemverScan
 		)
-		if err := rows.Scan(&tv.ID, &tv.TemplateID, &tv.VersionNo, &status, &sectionsJSON, &tv.CreatedAt); err != nil {
+		if err := rows.Scan(append([]any{&tv.ID, &tv.TemplateID, &tv.VersionNo, &status, &sectionsJSON, &tv.CreatedAt}, x.dests()...)...); err != nil {
 			return nil, fmt.Errorf("TemplateStore.ListTemplateVersions scan: %w", err)
 		}
 		tv.Status = domain.TemplateVersionStatus(status)
 		if err := json.Unmarshal(sectionsJSON, &tv.Sections); err != nil {
 			return nil, fmt.Errorf("TemplateStore.ListTemplateVersions unmarshal: %w", err)
 		}
+		x.apply(&tv)
 		out = append(out, tv)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	rows.Close()
+	// One lookup of the version before the drafts serves every draft in the list.
+	var base *templateBase
+	for i := range out {
+		if out[i].Status != domain.TemplateVersionStatusDraft {
+			continue
+		}
+		if base == nil {
+			b, err := loadTemplateBase(ctx, s.db.Querier(), templateID, uuid.Nil)
+			if err != nil {
+				return nil, fmt.Errorf("TemplateStore.ListTemplateVersions: project: %w", err)
+			}
+			base = &b
+		}
+		projectTemplateDraft(&out[i], *base)
+	}
+	return out, nil
 }
 
 // DeleteTemplateVersion discards a DRAFT version. The WHERE clause matches only
@@ -292,6 +319,9 @@ func (s *TemplateStore) CreateTemplateVersion(ctx context.Context, tv domain.Tem
 	if err != nil {
 		return domain.TemplateVersion{}, fmt.Errorf("TemplateStore.CreateTemplateVersion: %w", err)
 	}
+	if err := projectTemplateVersion(ctx, s.db.Querier(), &tv); err != nil {
+		return domain.TemplateVersion{}, fmt.Errorf("TemplateStore.CreateTemplateVersion: project: %w", err)
+	}
 	return tv, nil
 }
 
@@ -300,13 +330,50 @@ func (s *TemplateStore) CreateTemplateVersion(ctx context.Context, tv domain.Tem
 func (s *TemplateStore) PublishTemplateVersion(ctx context.Context, id uuid.UUID) (domain.TemplateVersion, error) {
 	// A published template version must have content — an empty draft can't be
 	// published. The guard lives here (not at create) so drafts may start empty.
-	tag, err := s.db.Querier().Exec(ctx,
-		`UPDATE template_versions SET status = 'published'
-		   WHERE id = $1 AND jsonb_array_length(sections) > 0`, id)
+	// The number comes from the change against the highest numbered version, so the version and its
+	// number are written together.
+	var published int64
+	err := s.db.RunInTx(ctx, func(tx pgx.Tx) error {
+		cur, err := s.loadDraftInTx(ctx, tx, id)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if cur.Status != domain.TemplateVersionStatusDraft {
+			// Publishing a version that already has its number only restores the status.
+			tag, err := tx.Exec(ctx,
+				`UPDATE template_versions SET status = 'published', published_at = COALESCE(published_at, now())
+				  WHERE id = $1 AND jsonb_array_length(sections) > 0`, id)
+			if err != nil {
+				return err
+			}
+			published = tag.RowsAffected()
+			return nil
+		}
+		base, err := loadTemplateBase(ctx, tx, cur.TemplateID, id)
+		if err != nil {
+			return err
+		}
+		cls, sv := base.number(cur.Sections)
+		logger.Ctx(ctx).Debug("template version numbered", log.F("version_id", id.String()),
+			log.F("semver", sv.String()), log.F("change_type", string(cls.Type)))
+		tag, err := tx.Exec(ctx,
+			`UPDATE template_versions
+			    SET status = 'published', published_at = now(), major = $2, minor = $3, fix = $4, change_type = $5
+			  WHERE id = $1 AND jsonb_array_length(sections) > 0`,
+			id, sv.Major, sv.Minor, sv.Fix, string(cls.Type))
+		if err != nil {
+			return err
+		}
+		published = tag.RowsAffected()
+		return nil
+	})
 	if err != nil {
 		return domain.TemplateVersion{}, fmt.Errorf("TemplateStore.PublishTemplateVersion: %w", err)
 	}
-	if tag.RowsAffected() == 0 {
+	if published == 0 {
 		var n int
 		if e := s.db.Querier().QueryRow(ctx,
 			`SELECT jsonb_array_length(sections) FROM template_versions WHERE id = $1`, id,
@@ -325,17 +392,22 @@ func (s *TemplateStore) GetTemplateVersion(ctx context.Context, id uuid.UUID) (d
 		tv           domain.TemplateVersion
 		status       string
 		sectionsJSON []byte
+		x            tvSemverScan
 	)
 	err := s.db.Querier().QueryRow(ctx,
-		`SELECT id, template_id, version_no, status, sections, created_at
+		`SELECT `+tvCols+`
 		   FROM template_versions WHERE id = $1`, id,
-	).Scan(&tv.ID, &tv.TemplateID, &tv.VersionNo, &status, &sectionsJSON, &tv.CreatedAt)
+	).Scan(append([]any{&tv.ID, &tv.TemplateID, &tv.VersionNo, &status, &sectionsJSON, &tv.CreatedAt}, x.dests()...)...)
 	if err != nil {
 		return domain.TemplateVersion{}, fmt.Errorf("TemplateStore.GetTemplateVersion: %w", err)
 	}
 	tv.Status = domain.TemplateVersionStatus(status)
 	if err := json.Unmarshal(sectionsJSON, &tv.Sections); err != nil {
 		return domain.TemplateVersion{}, fmt.Errorf("TemplateStore.GetTemplateVersion: unmarshal sections: %w", err)
+	}
+	x.apply(&tv)
+	if err := projectTemplateVersion(ctx, s.db.Querier(), &tv); err != nil {
+		return domain.TemplateVersion{}, fmt.Errorf("TemplateStore.GetTemplateVersion: project: %w", err)
 	}
 	return tv, nil
 }

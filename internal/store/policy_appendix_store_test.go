@@ -451,8 +451,8 @@ func TestMigration0010_UpDownAndCarry(t *testing.T) {
 		if published {
 			pub = "'" + created + "'"
 		}
-		exec(`INSERT INTO policy_versions (id, policy_id, version_no, status, content, created_at, published_at, created_by)
-		      VALUES ($1,$2,$3,$4,'{}',$5,`+pub+`,$6)`, id, policy, no, status, created, author)
+		exec(`INSERT INTO policy_versions (id, policy_id, version_no, major, status, content, created_at, published_at, created_by)
+		      VALUES ($1,$2,$3,$3,$4,'{}',$5,`+pub+`,$6)`, id, policy, no, status, created, author)
 		return id
 	}
 	appendix := func(ver uuid.UUID, idx int, title string) uuid.UUID {

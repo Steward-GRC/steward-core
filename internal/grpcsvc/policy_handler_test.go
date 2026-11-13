@@ -63,6 +63,12 @@ type fakePolicyStore struct {
 	policies      map[uuid.UUID]domain.Policy
 	versions      map[uuid.UUID]domain.PolicyVersion
 	draftByPolicy map[uuid.UUID]domain.PolicyVersion
+	// statusOpts is what the last SetVersionStatus received; statusErr forces it to fail.
+	statusOpts []store.StatusOption
+	statusErr  error
+	// changeCalls records SetVersionChangeType and RecordChangeTypeAgreement; changeErr forces them to fail.
+	changeCalls []string
+	changeErr   error
 	// moveSeq is the bulk-move fake's per-category counters (policy_move_handler_test.go).
 	moveSeq map[string]*int
 	// templateUpdateAvailable is the canned answer for
@@ -240,7 +246,11 @@ func (f *fakePolicyStore) RetirePolicy(_ context.Context, id uuid.UUID) (domain.
 	return p, nil
 }
 
-func (f *fakePolicyStore) SetVersionStatus(_ context.Context, policyVersionID uuid.UUID, target domain.PolicyVersionStatus) (domain.PolicyVersion, error) {
+func (f *fakePolicyStore) SetVersionStatus(_ context.Context, policyVersionID uuid.UUID, target domain.PolicyVersionStatus, opts ...store.StatusOption) (domain.PolicyVersion, error) {
+	f.statusOpts = opts
+	if f.statusErr != nil {
+		return domain.PolicyVersion{}, f.statusErr
+	}
 	pv, ok := f.versions[policyVersionID]
 	if !ok {
 		return domain.PolicyVersion{}, fmt.Errorf("not found")

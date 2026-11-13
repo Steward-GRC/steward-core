@@ -46,7 +46,9 @@ type Template struct {
 	Name            string
 	OwnerCategoryID uuid.UUID
 	CreatedAt       time.Time
-	RetiredAt       *time.Time // nil = active; set = soft-deleted (hidden from listings)
+	// UpdatedAt is the latest of a rename and any version being created or published.
+	UpdatedAt time.Time
+	RetiredAt *time.Time // nil = active; set = soft-deleted (hidden from listings)
 }
 
 type TemplateVersion struct {
@@ -56,6 +58,13 @@ type TemplateVersion struct {
 	Status     TemplateVersionStatus
 	Sections   []Section // sorted by Order ascending
 	CreatedAt  time.Time
+	// PublishedAt is nil until the version is published.
+	PublishedAt *time.Time
+	// Semver is stored at publish; for a draft it is the number the publish would give, and
+	// ChangeType is what it would publish as (Projected is then true).
+	Semver     SemVer
+	ChangeType ChangeType
+	Projected  bool
 }
 
 func NewTemplate(name string, ownerCategoryID uuid.UUID) (Template, error) {

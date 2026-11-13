@@ -7,6 +7,7 @@ package steward.core.v1;
 
 import "google/protobuf/timestamp.proto";
 import "steward/core/v1/category.proto";
+import "steward/core/v1/semver.proto";
 
 option go_package = "github.com/Steward-GRC/steward-core/gen/go/steward/core/v1;corev1";
 
@@ -78,6 +79,9 @@ message Policy {
   // The status of that same version; UNSPECIFIED when the policy has
   // neither a published version nor a draft.
   PolicyVersionStatus current_version_status = 21;
+  // The semantic version of the current version while that is published;
+  // unset for a draft, which is not numbered until it is published.
+  SemanticVersion current_semantic_version = 22;
 }
 
 message PolicyVersion {
@@ -93,6 +97,30 @@ message PolicyVersion {
   google.protobuf.Timestamp published_at = 8;
   string created_by = 9;
   string supersedes_version_id = 10;
+  // The semantic version. Stored once the version is published (version_no
+  // stays the ordinal). For a draft or a version in review it is the number a
+  // publish would give it from its content as it is now, and nothing is stored;
+  // SaveDraft's response leaves it unset.
+  SemanticVersion semantic_version = 11;
+  // What core classified the change as against the version before: set at
+  // submit, and for a draft or a version in review it is classified afresh on
+  // every read. Unset for the first version, which is always 1.0.0.
+  ChangeType suggested_change_type = 12;
+  // The type the version publishes as. Stored at publish. Before that: the
+  // suggestion, raised by the author's pick, and lowered below the suggestion
+  // only once the approvers agree (see requested_change_type).
+  ChangeType change_type = 13;
+  // A lowering below the suggestion that the author asked for and the approvers
+  // have not yet agreed to. It changes nothing until workflow records the
+  // agreement; then change_type takes its value and this clears.
+  ChangeType requested_change_type = 14;
+  // Why the author set the type below the suggestion.
+  string change_type_reason = 15;
+  // The user who picked the type; empty when nobody did and the suggestion
+  // stands.
+  string change_type_set_by = 16;
+  // The approvers who agreed to the lowering, written by workflow.
+  repeated string change_type_agreed_by = 17;
 }
 
 message SectionDiff {
@@ -238,9 +266,50 @@ message SetVersionStatusRequest {
   string policy_version_id = 1;
   string status = 2;
   string actor_user_id = 3;
+  // Read only on the submit (draft to in_review): the author's pick of the
+  // change type, with the reason a pick below the suggestion needs. Unset
+  // leaves the suggestion standing. A pick below the suggestion without a
+  // reason is refused with INVALID_ARGUMENT and the draft stays a draft. The
+  // first version of a document is always 1.0.0 and takes no pick.
+  ChangeType change_type = 4;
+  string change_type_reason = 5;
 }
 
 message SetVersionStatusResponse {
+  PolicyVersion version = 1;
+}
+
+// SetVersionChangeTypeRequest sets the author's pick of the change type for a
+// draft or a version in review. A pick at or above the suggestion takes effect
+// at once. A pick below it needs a reason (INVALID_ARGUMENT without one) and
+// goes into requested_change_type, and the version stays at the suggested
+// type until workflow records the approvers' agreement. A published, rejected
+// or archived version is refused with FAILED_PRECONDITION, and so is the first
+// version of a document, which is always 1.0.0.
+message SetVersionChangeTypeRequest {
+  string policy_version_id = 1;
+  ChangeType change_type = 2;
+  string reason = 3;
+  string actor_user_id = 4;
+}
+
+message SetVersionChangeTypeResponse {
+  PolicyVersion version = 1;
+}
+
+// RecordChangeTypeAgreementRequest is written by workflow once the stage's
+// approvers have agreed, by their quorum, to the pending lowering of a version
+// in review. It applies the lowering and stores who agreed. It is refused with
+// FAILED_PRECONDITION when no lowering is pending, and with INVALID_ARGUMENT
+// when no approver is named. Only workflow may call it.
+message RecordChangeTypeAgreementRequest {
+  string policy_version_id = 1;
+  repeated string agreed_by_user_ids = 2;
+  // The user whose decision completed the quorum; audited as the actor.
+  string actor_user_id = 3;
+}
+
+message RecordChangeTypeAgreementResponse {
   PolicyVersion version = 1;
 }
 
@@ -448,6 +517,12 @@ message ObligatingPolicy {
   // Always a policy: procedures never obligate. Carried so consumers can
   // check without a second lookup.
   DocumentType document_type = 9;
+  // The semantic version of the published version, and the change type it was
+  // published as: a Major change asks for acknowledgement again on "On change",
+  // a Minor change notifies, a Fix is silent. Unset for a version published
+  // before change types were stored.
+  SemanticVersion semantic_version = 10;
+  ChangeType change_type = 11;
 }
 
 message ListObligatingPoliciesRequest {}
@@ -566,6 +641,8 @@ service PolicyService {
   rpc RecordBreakGlassRead(RecordBreakGlassReadRequest) returns (RecordBreakGlassReadResponse);
   // SetVersionStatus is how workflow writes an approval outcome back.
   rpc SetVersionStatus(SetVersionStatusRequest) returns (SetVersionStatusResponse);
+  rpc SetVersionChangeType(SetVersionChangeTypeRequest) returns (SetVersionChangeTypeResponse);
+  rpc RecordChangeTypeAgreement(RecordChangeTypeAgreementRequest) returns (RecordChangeTypeAgreementResponse);
   rpc SetPolicyOwner(SetPolicyOwnerRequest) returns (SetPolicyOwnerResponse);
   rpc ListPoliciesByOwner(ListPoliciesByOwnerRequest) returns (ListPoliciesByOwnerResponse);
   rpc ReassignUserPolicies(ReassignUserPoliciesRequest) returns (ReassignUserPoliciesResponse);

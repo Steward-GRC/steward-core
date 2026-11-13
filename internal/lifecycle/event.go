@@ -103,9 +103,14 @@ type SectionContent struct {
 // readers then fall back to the publish date. An empty DocumentType reads as
 // a policy.
 type PolicyVersionContent struct {
-	PolicyID      string           `json:"PolicyID"`
-	VersionID     string           `json:"VersionID"`
-	VersionNo     int              `json:"VersionNo"`
+	PolicyID  string `json:"PolicyID"`
+	VersionID string `json:"VersionID"`
+	VersionNo int    `json:"VersionNo"`
+	// Semver ("2.1.0") and ChangeType ("major", "minor" or "fix") say how the version differs from
+	// the one before, so a consumer can decide what the change asks of readers. Both are absent
+	// for a version published before change types were stored.
+	Semver        string           `json:"Semver,omitempty"`
+	ChangeType    string           `json:"ChangeType,omitempty"`
 	CategoryID    string           `json:"CategoryID"`
 	Sensitivity   string           `json:"Sensitivity"` // "standard" or "sensitive"
 	PolicyTitle   string           `json:"PolicyTitle"`
