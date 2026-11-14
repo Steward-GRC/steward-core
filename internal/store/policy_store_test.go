@@ -361,6 +361,65 @@ func TestPolicyStoreListPoliciesByOwner(t *testing.T) {
 	}
 }
 
+// TestPolicyStoreListPoliciesByOwnerDraftVersion checks each owned policy comes back with the same
+// current draft version id GetPolicy reports: set while a working version exists, empty once the
+// draft is published. The gateway's myDrafts keeps only rows with the id set.
+func TestPolicyStoreListPoliciesByOwnerDraftVersion(t *testing.T) {
+	pool := newTestDB(t)
+	gs := store.NewCategoryStore(pool)
+	ts := store.NewTemplateStore(pool)
+	ps := store.NewPolicyStore(pool)
+	ctx := context.Background()
+	g, _ := setupCategoryAndTemplate(t, gs, ts)
+
+	owner := uuid.New()
+	drafting, _ := domain.NewPolicy("Still Drafting", g.ID, domain.SensitivityStandard, owner)
+	drafting, err := ps.CreatePolicy(ctx, drafting)
+	if err != nil {
+		t.Fatalf("CreatePolicy drafting: %v", err)
+	}
+	if drafting.CurrentDraftVersionID == uuid.Nil {
+		t.Fatal("CreatePolicy should seed a draft")
+	}
+	published, _ := domain.NewPolicy("Already Published", g.ID, domain.SensitivityStandard, owner)
+	published, err = ps.CreatePolicy(ctx, published)
+	if err != nil {
+		t.Fatalf("CreatePolicy published: %v", err)
+	}
+	if _, err := ps.PublishDraft(ctx, published.ID, uuid.New()); err != nil {
+		t.Fatalf("PublishDraft: %v", err)
+	}
+
+	got, err := ps.ListPoliciesByOwner(ctx, owner, false)
+	if err != nil {
+		t.Fatalf("ListPoliciesByOwner: %v", err)
+	}
+	byID := map[uuid.UUID]domain.Policy{}
+	for _, p := range got {
+		byID[p.ID] = p
+	}
+	if len(byID) != 2 {
+		t.Fatalf("owned set: got %d policies want 2", len(byID))
+	}
+	if gotID := byID[drafting.ID].CurrentDraftVersionID; gotID != drafting.CurrentDraftVersionID {
+		t.Fatalf("drafting policy draft version id: got %s want %s", gotID, drafting.CurrentDraftVersionID)
+	}
+	if gotID := byID[published.ID].CurrentDraftVersionID; gotID != uuid.Nil {
+		t.Fatalf("published policy should have no draft version id, got %s", gotID)
+	}
+	if byID[published.ID].CurrentPublishedVersionID == uuid.Nil {
+		t.Fatal("published policy should keep its published version id")
+	}
+	// Same answer as GetPolicy.
+	single, err := ps.GetPolicy(ctx, drafting.ID)
+	if err != nil {
+		t.Fatalf("GetPolicy: %v", err)
+	}
+	if single.CurrentDraftVersionID != byID[drafting.ID].CurrentDraftVersionID {
+		t.Fatalf("GetPolicy and ListPoliciesByOwner disagree on the draft version id")
+	}
+}
+
 // TestPolicyStoreReassignUserPolicies checks ownership moves to another user
 // and user-subject category rules are rewritten in the same transaction,
 // without deleting a policy.
