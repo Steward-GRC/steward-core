@@ -1369,6 +1369,7 @@ func (s *PolicyStore) ListAllPolicies(ctx context.Context) ([]domain.Policy, err
 func (s *PolicyStore) ListPoliciesByOwner(ctx context.Context, ownerUserID uuid.UUID, includeRetired bool) ([]domain.Policy, error) {
 	q := `SELECT p.id, p.home_category_id, p.sequence, p.document_type, hg.code, hg.slug, p.title, p.sensitivity,
 	             p.template_id, p.template_none, p.current_published_version_id,
+	             (SELECT id FROM policy_versions WHERE policy_id = p.id AND status IN ('draft','in_review') LIMIT 1),
 	             p.owner_user_id,
 	             p.ack_triggers, p.ack_audience_override,
 	             p.created_at, p.updated_at, p.retired_at
@@ -1394,12 +1395,14 @@ func (s *PolicyStore) ListPoliciesByOwner(ctx context.Context, ownerUserID uuid.
 			categorySlug        string
 			templateID          *uuid.UUID
 			currentPubVID       *uuid.UUID
+			currentDraftVID     *uuid.UUID
 			ackTriggersRaw      *string
 			ackAudienceOverride pgtype.FlatArray[uuid.UUID]
 			retiredAt           *time.Time
 		)
 		if err := rows.Scan(&p.ID, &p.HomeCategoryID, &p.Sequence, &docType, &categoryCode, &categorySlug, &p.Title, &sensitivity,
 			&templateID, &p.TemplateNone, &currentPubVID,
+			&currentDraftVID,
 			&p.OwnerUserID,
 			&ackTriggersRaw, &ackAudienceOverride,
 			&p.CreatedAt, &p.UpdatedAt, &retiredAt); err != nil {
@@ -1414,6 +1417,9 @@ func (s *PolicyStore) ListPoliciesByOwner(ctx context.Context, ownerUserID uuid.
 		}
 		if currentPubVID != nil {
 			p.CurrentPublishedVersionID = *currentPubVID
+		}
+		if currentDraftVID != nil {
+			p.CurrentDraftVersionID = *currentDraftVID
 		}
 		if ackTriggersRaw != nil {
 			v := domain.AckTrigger(*ackTriggersRaw)

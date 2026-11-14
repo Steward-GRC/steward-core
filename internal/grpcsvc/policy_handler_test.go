@@ -1747,7 +1747,8 @@ func TestListPoliciesByOwner(t *testing.T) {
 	retired := uuid.New()
 	notOwned := uuid.New()
 	retiredAt := time.Now()
-	fakePS.policies[active] = domain.Policy{ID: active, HomeCategoryID: gid, OwnerUserID: owner}
+	draftVID := uuid.New()
+	fakePS.policies[active] = domain.Policy{ID: active, HomeCategoryID: gid, OwnerUserID: owner, CurrentDraftVersionID: draftVID}
 	fakePS.policies[retired] = domain.Policy{ID: retired, HomeCategoryID: gid, OwnerUserID: owner, RetiredAt: &retiredAt}
 	fakePS.policies[notOwned] = domain.Policy{ID: notOwned, HomeCategoryID: gid, OwnerUserID: other}
 
@@ -1759,6 +1760,10 @@ func TestListPoliciesByOwner(t *testing.T) {
 	}
 	if len(resp.GetPolicies()) != 1 || resp.GetPolicies()[0].GetId() != active.String() {
 		t.Fatalf("active-only: got %d policies %+v", len(resp.GetPolicies()), resp.GetPolicies())
+	}
+	// The draft version id reaches the caller; the gateway's myDrafts keys on it.
+	if got := resp.GetPolicies()[0].GetCurrentDraftVersionId(); got != draftVID.String() {
+		t.Fatalf("current_draft_version_id: got %q want %q", got, draftVID)
 	}
 
 	respAll, err := h.ListPoliciesByOwner(context.Background(), &corev1.ListPoliciesByOwnerRequest{OwnerUserId: owner.String(), IncludeRetired: true})
