@@ -32,6 +32,10 @@ tasks:
     cmds:
       - scripts/proto-generate.sh
       - buf lint
+  proto-test:
+    desc: Test the proto-generate.sh helpers (offline, GNU and BSD tar)
+    cmds:
+      - scripts/proto-generate_test.sh
   proto-breaking:
     desc: Check proto/ for breaking changes against main
     cmds:
