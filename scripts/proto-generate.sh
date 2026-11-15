@@ -10,6 +10,9 @@ set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=/dev/null
 source "$root/proto-refs.env"
+# shellcheck source=/dev/null
+source "$root/scripts/proto-lib.sh"
+check_plugin_versions
 
 protos="$root/.protos"
 rm -rf "$protos" "$root/gen/go/thirdparty"
@@ -18,8 +21,7 @@ rm -rf "$protos" "$root/gen/go/thirdparty"
 fetch() {
   local repo="$1" ref="$2" local_dir="$3"
   shift 3
-  local dest="$protos/$repo" pkg
-  local patterns=()
+  local dest="$protos/$repo" pkg archive
   mkdir -p "$dest"
   if [[ -n "$local_dir" ]]; then
     echo "proto: $repo from $local_dir"
@@ -30,11 +32,10 @@ fetch() {
     return
   fi
   echo "proto: $repo at $ref"
-  for pkg in "$@"; do
-    patterns+=("*/proto/$pkg/*")
-  done
-  curl -sSfL "https://codeload.github.com/Steward-GRC/$repo/tar.gz/$ref" |
-    tar -xz -C "$dest" --strip-components=2 --wildcards "${patterns[@]}"
+  archive="$(mktemp)"
+  curl -sSfL "https://codeload.github.com/Steward-GRC/$repo/tar.gz/$ref" -o "$archive"
+  extract_protos "$archive" "$dest" "$@"
+  rm -f "$archive"
 }
 
 fetch steward-audit "$STEWARD_AUDIT_REF" "${STEWARD_AUDIT_PROTO_DIR:-}" steward/audit
